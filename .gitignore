@@ -13,6 +13,7 @@ TestResults/
 *.trx
 *.coverage
 coverage/
+.dotnet-cli/
 
 ## Rider / VS Code
 .idea/
