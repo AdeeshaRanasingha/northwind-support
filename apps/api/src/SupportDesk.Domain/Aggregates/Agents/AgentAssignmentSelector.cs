@@ -13,12 +13,7 @@ public static class AgentAssignmentSelector
         ArgumentNullException.ThrowIfNull(candidates);
 
         var selected = candidates
-            .Where(candidate => candidate.Agent.IsActive)
-            .Where(candidate =>
-                !category.RequiresSpecialist
-                || candidate.Agent.Specializations.Any(
-                    specialization => specialization.CategoryId == category.Id))
-            .Where(candidate => candidate.OpenTicketCount < candidate.Agent.MaxOpenTickets)
+            .Where(candidate => IsEligible(category, candidate))
             .OrderBy(candidate => candidate.OpenTicketCount)
             .ThenBy(candidate => candidate.Agent.Id)
             .ThenBy(candidate => candidate.Agent.FullName, StringComparer.Ordinal)
@@ -28,5 +23,18 @@ public static class AgentAssignmentSelector
             ? AgentAssignmentDecision.Unassigned(
                 "No active agent with the required specialization and available capacity was found.")
             : AgentAssignmentDecision.AssignedTo(selected.Agent);
+    }
+
+    /// <summary>Checks the shared activity, specialization and capacity rules.</summary>
+    public static bool IsEligible(Category category, AgentAssignmentCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(category);
+        ArgumentNullException.ThrowIfNull(candidate);
+
+        return candidate.Agent.IsActive
+            && (!category.RequiresSpecialist
+                || candidate.Agent.Specializations.Any(
+                    specialization => specialization.CategoryId == category.Id))
+            && candidate.OpenTicketCount < candidate.Agent.MaxOpenTickets;
     }
 }

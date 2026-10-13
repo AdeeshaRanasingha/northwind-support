@@ -115,4 +115,15 @@ public sealed class Ticket : AggregateRoot
         AssignedAgentId = agentId;
         UpdatedAtUtc = nowUtc;
     }
+
+    /// <summary>Applies a fully validated escalation decision as one aggregate change.</summary>
+    internal void ApplyEscalation(TicketEscalationDecision decision)
+    {
+        ArgumentNullException.ThrowIfNull(decision);
+
+        Priority = decision.ToPriority;
+        AssignedAgentId = decision.ToAgentId;
+        DueAtUtc = decision.ToDueAtUtc;
+        UpdatedAtUtc = decision.EscalatedAtUtc;
+    }
 }
