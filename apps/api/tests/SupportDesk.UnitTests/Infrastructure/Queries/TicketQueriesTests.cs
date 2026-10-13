@@ -360,6 +360,37 @@ public sealed class TicketQueriesTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPagedAsync_WithSearchAndAllCompatibleExactFilters_CombinesThemWithAnd()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery
+            {
+                Search = "Email delivery",
+                Status = TicketStatus.InProgress,
+                Priority = TicketPriority.High,
+                CategoryId = _technicalCategoryId,
+                CustomerId = _contosoCustomerId,
+                AssignedAgentId = _alexAgentId
+            },
+            CancellationToken.None);
+
+        Assert.Equal("TCK-0003", Assert.Single(result.Items).Reference);
+    }
+
+    [Theory]
+    [InlineData("%")]
+    [InlineData("_")]
+    public async Task GetPagedAsync_WithSqlWildcardCharacters_TreatsThemAsLiterals(string search)
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Search = search }, CancellationToken.None);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+        Assert.Equal(0, result.TotalPages);
+    }
+
+    [Fact]
     public async Task GetPagedAsync_WhenSearchHasNoMatches_ReturnsEmptyPagination()
     {
         var result = await _queries.GetPagedAsync(
@@ -381,6 +412,7 @@ public sealed class TicketQueriesTests : IDisposable
         Assert.Equal(4, result.TotalCount);
         Assert.Equal(2, result.TotalPages);
         Assert.All(result.Items, ticket => Assert.Equal("Northwind Traders", ticket.Customer.Name));
+        Assert.Equal(["TCK-0002", "TCK-0001"], result.Items.Select(ticket => ticket.Reference));
     }
 
     public void Dispose()
