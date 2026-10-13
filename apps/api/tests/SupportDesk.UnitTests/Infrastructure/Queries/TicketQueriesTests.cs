@@ -231,6 +231,74 @@ public sealed class TicketQueriesTests : IDisposable
         Assert.All(result.Items, ticket => Assert.Equal(_billingCategoryId, ticket.Category.Id));
     }
 
+    [Fact]
+    public async Task GetPagedAsync_WithUnassignedOnlyTrue_ReturnsOnlyUnassignedTickets()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { UnassignedOnly = true }, CancellationToken.None);
+
+        Assert.Equal(2, result.TotalCount);
+        Assert.All(result.Items, ticket => Assert.Null(ticket.AssignedAgent));
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithUnassignedOnlyFalse_PreservesAssignedAndUnassignedTickets()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { UnassignedOnly = false }, CancellationToken.None);
+
+        Assert.Equal(6, result.TotalCount);
+        Assert.Contains(result.Items, ticket => ticket.AssignedAgent is null);
+        Assert.Contains(result.Items, ticket => ticket.AssignedAgent is not null);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithoutUnassignedOnly_PreservesAssignedAndUnassignedTickets()
+    {
+        var result = await _queries.GetPagedAsync(new TicketQuery(), CancellationToken.None);
+
+        Assert.Equal(6, result.TotalCount);
+        Assert.Contains(result.Items, ticket => ticket.AssignedAgent is null);
+        Assert.Contains(result.Items, ticket => ticket.AssignedAgent is not null);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithUnassignedOnlyAndPriority_CombinesThemWithAnd()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { UnassignedOnly = true, Priority = TicketPriority.Critical },
+            CancellationToken.None);
+
+        var ticket = Assert.Single(result.Items);
+        Assert.Equal("TCK-0006", ticket.Reference);
+        Assert.Null(ticket.AssignedAgent);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithAssignedAgentAndUnassignedOnly_ReturnsEmptyPagination()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { AssignedAgentId = _alexAgentId, UnassignedOnly = true },
+            CancellationToken.None);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+        Assert.Equal(0, result.TotalPages);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_CountsUnassignedRowsBeforePaging()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { UnassignedOnly = true, Page = 2, PageSize = 1 },
+            CancellationToken.None);
+
+        Assert.Single(result.Items);
+        Assert.Null(result.Items[0].AssignedAgent);
+        Assert.Equal(2, result.TotalCount);
+        Assert.Equal(2, result.TotalPages);
+    }
+
     public void Dispose()
     {
         _db.Dispose();
