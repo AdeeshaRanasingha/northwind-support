@@ -29,6 +29,9 @@ public class RaiseTicketCommandHandlerTests
         Assert.Null(created.AssignedAgentId);
         Assert.Equal(FixedClock.DefaultNow, created.CreatedAtUtc);
         Assert.Equal(FixedClock.DefaultNow, created.UpdatedAtUtc);
+        Assert.Equal(DateTimeKind.Utc, created.CreatedAtUtc.Kind);
+        Assert.Equal(DateTimeKind.Utc, created.UpdatedAtUtc.Kind);
+        Assert.Equal(DateTimeKind.Utc, created.DueAtUtc!.Value.Kind);
         context.VerifySaved(Times.Once());
     }
 
