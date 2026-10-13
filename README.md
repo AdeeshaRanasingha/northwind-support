@@ -30,6 +30,36 @@ Full requirements are in **[`ASSIGNMENT_CANDIDATE.md`](ASSIGNMENT_CANDIDATE.md)*
 - **Out of scope:** registration, password reset, roles, OAuth/SSO, refresh tokens, MFA,
   notifications, CI, caching, visual redesign. Mention them under *Known limitations* instead.
 
+### DEFECT-117
+
+The ticket request effect watched only search and pagination, so other filter state changed in the
+UI without triggering a request. The hook now applies every non-search filter immediately while
+debouncing only search for 300 ms, using the complete effective filter state for each request.
+
+To verify, open the ticket list with browser DevTools on the Network tab, change any single filter,
+and confirm a new `GET /api/tickets` contains that value. Type rapidly in Search and confirm only
+the settled value is requested after 300 ms.
+
+### Server-side ticket filtering
+
+`TicketQueries.ApplyFilters` builds the ticket-list query from independent, conditional
+`IQueryable` predicates for `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`,
+`unassignedOnly`, and `search`. Supplied filters combine with AND; within `search`, title,
+reference, and customer name combine with OR. Empty search values are ignored.
+
+The composed query remains unmaterialized until EF Core executes `CountAsync` and the paged
+`Skip`/`Take` query, so filtering occurs in SQL and both `totalCount` and `totalPages` describe the
+filtered set. Relational SQLite tests, requests against the development SQL Server, and inspection
+of generated SQL verified that the same predicates run before counting and pagination. A future
+`slaStatus` filter can be added as another conditional predicate in `ApplyFilters` without changing
+the query structure.
+
+Run the focused filtering tests with:
+
+```bash
+dotnet test apps/api/tests/SupportDesk.UnitTests/SupportDesk.UnitTests.csproj --filter FullyQualifiedName~TicketQueriesTests
+```
+
 ### Submission
 
 1. Update this **README** with what you built, your design decisions (chosen, rejected and why),
@@ -87,7 +117,7 @@ Both pass on a clean checkout and neither needs a database.
 
 | Endpoint | Description |
 | --- | --- |
-| `GET /api/tickets` | Paged list with `search`, `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`, `unassignedOnly`, `sortBy`, `sortDirection`. **Filters are accepted but not applied yet** (Task 1). |
+| `GET /api/tickets` | Filtered and paged list with `search`, `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`, `unassignedOnly`, `sortBy`, and `sortDirection`. |
 | `GET /api/tickets/{id}` | One ticket |
 | `POST /api/tickets` | Create a ticket |
 | `PATCH /api/tickets/{id}/status` · `/assignment` | Change status / assignee |
