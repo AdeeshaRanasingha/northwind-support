@@ -17,8 +17,9 @@ namespace SupportDesk.Infrastructure.Queries;
 public sealed class TicketQueries(SupportDbContext db, IClock clock) : ITicketQueries
 {
     /// <remarks>
-    /// Status and priority are applied before counting and paging. The remaining filter values
-    /// bound into <paramref name="query"/> are implemented in later assignment checkpoints.
+    /// Exact status, priority, category, customer and assigned-agent filters are applied before
+    /// counting and paging. The remaining filter values bound into <paramref name="query"/> are
+    /// implemented in later assignment checkpoints.
     /// </remarks>
     public async Task<PagedResult<TicketListItemDto>> GetPagedAsync(TicketQuery query, CancellationToken ct)
     {
@@ -128,6 +129,21 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock) : ITicketQu
         if (query.Priority is { } priority)
         {
             source = source.Where(x => x.Ticket.Priority == priority);
+        }
+
+        if (query.CategoryId is { } categoryId)
+        {
+            source = source.Where(x => x.Ticket.CategoryId == categoryId);
+        }
+
+        if (query.CustomerId is { } customerId)
+        {
+            source = source.Where(x => x.Ticket.CustomerId == customerId);
+        }
+
+        if (query.AssignedAgentId is { } assignedAgentId)
+        {
+            source = source.Where(x => x.Ticket.AssignedAgentId == assignedAgentId);
         }
 
         return source;

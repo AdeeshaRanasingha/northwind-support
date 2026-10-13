@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SupportDesk.Application.Contracts.Tickets;
+using SupportDesk.Domain.Aggregates.Agents;
 using SupportDesk.Domain.Aggregates.Categories;
 using SupportDesk.Domain.Aggregates.Customers;
 using SupportDesk.Domain.Aggregates.Tickets;
@@ -15,6 +16,12 @@ public sealed class TicketQueriesTests : IDisposable
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly SupportDbContext _db;
     private readonly TicketQueries _queries;
+    private int _technicalCategoryId;
+    private int _billingCategoryId;
+    private int _northwindCustomerId;
+    private int _contosoCustomerId;
+    private int _alexAgentId;
+    private int _saraAgentId;
 
     public TicketQueriesTests()
     {
@@ -103,6 +110,127 @@ public sealed class TicketQueriesTests : IDisposable
         Assert.Equal(2, result.TotalPages);
     }
 
+    [Fact]
+    public async Task GetPagedAsync_WithCategory_ReturnsOnlyExactMatches()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { CategoryId = _technicalCategoryId }, CancellationToken.None);
+
+        Assert.Equal(3, result.TotalCount);
+        Assert.All(result.Items, ticket => Assert.Equal(_technicalCategoryId, ticket.Category.Id));
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithCustomer_ReturnsOnlyExactMatches()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { CustomerId = _contosoCustomerId }, CancellationToken.None);
+
+        Assert.Equal(2, result.TotalCount);
+        Assert.All(result.Items, ticket => Assert.Equal(_contosoCustomerId, ticket.Customer.Id));
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithAssignedAgent_ExcludesUnassignedTickets()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { AssignedAgentId = _alexAgentId }, CancellationToken.None);
+
+        Assert.Equal(2, result.TotalCount);
+        Assert.All(result.Items, ticket => Assert.Equal(_alexAgentId, ticket.AssignedAgent!.Id));
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithStatusAndCategory_CombinesThemWithAnd()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Status = TicketStatus.InProgress, CategoryId = _technicalCategoryId },
+            CancellationToken.None);
+
+        Assert.Equal("TCK-0003", Assert.Single(result.Items).Reference);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithPriorityAndCustomer_CombinesThemWithAnd()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Priority = TicketPriority.High, CustomerId = _northwindCustomerId },
+            CancellationToken.None);
+
+        Assert.Equal(2, result.TotalCount);
+        Assert.All(result.Items, ticket =>
+        {
+            Assert.Equal(TicketPriority.High, ticket.Priority);
+            Assert.Equal(_northwindCustomerId, ticket.Customer.Id);
+        });
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithCategoryCustomerAndAgent_CombinesThemWithAnd()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery
+            {
+                CategoryId = _billingCategoryId,
+                CustomerId = _contosoCustomerId,
+                AssignedAgentId = _saraAgentId
+            },
+            CancellationToken.None);
+
+        Assert.Equal("TCK-0004", Assert.Single(result.Items).Reference);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithAllFiveExactFilters_CombinesThemWithAnd()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery
+            {
+                Status = TicketStatus.InProgress,
+                Priority = TicketPriority.High,
+                CategoryId = _technicalCategoryId,
+                CustomerId = _contosoCustomerId,
+                AssignedAgentId = _alexAgentId
+            },
+            CancellationToken.None);
+
+        Assert.Equal("TCK-0003", Assert.Single(result.Items).Reference);
+    }
+
+    [Theory]
+    [InlineData("category")]
+    [InlineData("customer")]
+    [InlineData("agent")]
+    public async Task GetPagedAsync_WithNonexistentForeignKey_ReturnsEmptyPagination(string filter)
+    {
+        var query = filter switch
+        {
+            "category" => new TicketQuery { CategoryId = int.MaxValue },
+            "customer" => new TicketQuery { CustomerId = int.MaxValue },
+            "agent" => new TicketQuery { AssignedAgentId = int.MaxValue },
+            _ => throw new ArgumentOutOfRangeException(nameof(filter))
+        };
+
+        var result = await _queries.GetPagedAsync(query, CancellationToken.None);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+        Assert.Equal(0, result.TotalPages);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_CountsCategoryFilteredRowsBeforePaging()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { CategoryId = _billingCategoryId, Page = 2, PageSize = 2 },
+            CancellationToken.None);
+
+        Assert.Single(result.Items);
+        Assert.Equal(3, result.TotalCount);
+        Assert.Equal(2, result.TotalPages);
+        Assert.All(result.Items, ticket => Assert.Equal(_billingCategoryId, ticket.Category.Id));
+    }
+
     public void Dispose()
     {
         _db.Dispose();
@@ -111,43 +239,73 @@ public sealed class TicketQueriesTests : IDisposable
 
     private void Seed()
     {
-        var customer = new Customer(
+        var northwind = new Customer(
             "Northwind Traders",
             "support@northwind.example",
             null,
             CustomerTier.Standard,
             FixedClock.DefaultNow.AddDays(-30));
-        var category = new Category(
+        var contoso = new Customer(
+            "Contoso Ltd",
+            "support@contoso.example",
+            null,
+            CustomerTier.Premium,
+            FixedClock.DefaultNow.AddDays(-20));
+        var technical = new Category(
             "Technical",
             requiresSpecialist: false,
             forcesCriticalPriority: false);
+        var billing = new Category(
+            "Billing",
+            requiresSpecialist: false,
+            forcesCriticalPriority: false);
+        var alex = new Agent("Alex Turner", "alex@example.com", 10, FixedClock.DefaultNow.AddDays(-10));
+        var sara = new Agent("Sara Lindqvist", "sara@example.com", 10, FixedClock.DefaultNow.AddDays(-10));
 
-        _db.AddRange(customer, category);
+        _db.AddRange(northwind, contoso, technical, billing, alex, sara);
         _db.SaveChanges();
+
+        _technicalCategoryId = technical.Id;
+        _billingCategoryId = billing.Id;
+        _northwindCustomerId = northwind.Id;
+        _contosoCustomerId = contoso.Id;
+        _alexAgentId = alex.Id;
+        _saraAgentId = sara.Id;
 
         _db.AddRange(
-            BuildTicket("TCK-0001", TicketPriority.Low, TicketStatus.New),
-            BuildTicket("TCK-0002", TicketPriority.High, TicketStatus.New),
-            BuildTicket("TCK-0003", TicketPriority.High, TicketStatus.InProgress),
-            BuildTicket("TCK-0004", TicketPriority.Medium, TicketStatus.InProgress),
-            BuildTicket("TCK-0005", TicketPriority.High, TicketStatus.Resolved),
-            BuildTicket("TCK-0006", TicketPriority.Critical, TicketStatus.Open));
+            BuildTicket("TCK-0001", TicketPriority.Low, TicketStatus.New, northwind.Id, technical.Id, null),
+            BuildTicket("TCK-0002", TicketPriority.High, TicketStatus.New, northwind.Id, billing.Id, alex.Id),
+            BuildTicket("TCK-0003", TicketPriority.High, TicketStatus.InProgress, contoso.Id, technical.Id, alex.Id),
+            BuildTicket("TCK-0004", TicketPriority.Medium, TicketStatus.InProgress, contoso.Id, billing.Id, sara.Id),
+            BuildTicket("TCK-0005", TicketPriority.High, TicketStatus.Resolved, northwind.Id, billing.Id, sara.Id),
+            BuildTicket("TCK-0006", TicketPriority.Critical, TicketStatus.Open, northwind.Id, technical.Id, null));
         _db.SaveChanges();
 
-        Ticket BuildTicket(string reference, TicketPriority priority, TicketStatus status)
+        Ticket BuildTicket(
+            string reference,
+            TicketPriority priority,
+            TicketStatus status,
+            int customerId,
+            int categoryId,
+            int? assignedAgentId)
         {
             var ticket = Ticket.Raise(
                 reference,
                 $"Ticket {reference}",
                 "A description long enough for a support ticket.",
-                customer.Id,
-                category.Id,
+                customerId,
+                categoryId,
                 priority,
                 FixedClock.DefaultNow);
 
             if (status != TicketStatus.New)
             {
                 ticket.ChangeStatus(status, FixedClock.DefaultNow.AddMinutes(5));
+            }
+
+            if (assignedAgentId is { } agentId)
+            {
+                ticket.AssignTo(agentId, FixedClock.DefaultNow.AddMinutes(10));
             }
 
             return ticket;
