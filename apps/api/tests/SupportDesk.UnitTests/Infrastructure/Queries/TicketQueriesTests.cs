@@ -299,6 +299,90 @@ public sealed class TicketQueriesTests : IDisposable
         Assert.Equal(2, result.TotalPages);
     }
 
+    [Fact]
+    public async Task GetPagedAsync_SearchesTicketTitle()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Search = "Printer failure" }, CancellationToken.None);
+
+        Assert.Equal("TCK-0001", Assert.Single(result.Items).Reference);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_SearchesTicketReference()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Search = "TCK-0003" }, CancellationToken.None);
+
+        Assert.Equal("TCK-0003", Assert.Single(result.Items).Reference);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_SearchesCustomerName()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Search = "Contoso" }, CancellationToken.None);
+
+        Assert.Equal(2, result.TotalCount);
+        Assert.All(result.Items, ticket => Assert.Equal("Contoso Ltd", ticket.Customer.Name));
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_TrimsSearchWhitespace()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Search = "  Printer failure  " }, CancellationToken.None);
+
+        Assert.Equal("TCK-0001", Assert.Single(result.Items).Reference);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task GetPagedAsync_WithBlankSearch_DoesNotRestrictResults(string search)
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Search = search }, CancellationToken.None);
+
+        Assert.Equal(6, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithSearchAndPriority_CombinesThemWithAnd()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Search = "Billing portal", Priority = TicketPriority.High },
+            CancellationToken.None);
+
+        var ticket = Assert.Single(result.Items);
+        Assert.Equal("TCK-0002", ticket.Reference);
+        Assert.Equal(TicketPriority.High, ticket.Priority);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WhenSearchHasNoMatches_ReturnsEmptyPagination()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Search = "does-not-exist" }, CancellationToken.None);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+        Assert.Equal(0, result.TotalPages);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_CountsSearchResultsBeforePaging()
+    {
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { Search = "Northwind", Page = 2, PageSize = 2 },
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Items.Count);
+        Assert.Equal(4, result.TotalCount);
+        Assert.Equal(2, result.TotalPages);
+        Assert.All(result.Items, ticket => Assert.Equal("Northwind Traders", ticket.Customer.Name));
+    }
+
     public void Dispose()
     {
         _db.Dispose();
@@ -341,16 +425,17 @@ public sealed class TicketQueriesTests : IDisposable
         _saraAgentId = sara.Id;
 
         _db.AddRange(
-            BuildTicket("TCK-0001", TicketPriority.Low, TicketStatus.New, northwind.Id, technical.Id, null),
-            BuildTicket("TCK-0002", TicketPriority.High, TicketStatus.New, northwind.Id, billing.Id, alex.Id),
-            BuildTicket("TCK-0003", TicketPriority.High, TicketStatus.InProgress, contoso.Id, technical.Id, alex.Id),
-            BuildTicket("TCK-0004", TicketPriority.Medium, TicketStatus.InProgress, contoso.Id, billing.Id, sara.Id),
-            BuildTicket("TCK-0005", TicketPriority.High, TicketStatus.Resolved, northwind.Id, billing.Id, sara.Id),
-            BuildTicket("TCK-0006", TicketPriority.Critical, TicketStatus.Open, northwind.Id, technical.Id, null));
+            BuildTicket("TCK-0001", "Printer failure in warehouse", TicketPriority.Low, TicketStatus.New, northwind.Id, technical.Id, null),
+            BuildTicket("TCK-0002", "Billing portal unavailable", TicketPriority.High, TicketStatus.New, northwind.Id, billing.Id, alex.Id),
+            BuildTicket("TCK-0003", "Email delivery delayed", TicketPriority.High, TicketStatus.InProgress, contoso.Id, technical.Id, alex.Id),
+            BuildTicket("TCK-0004", "Laptop setup request", TicketPriority.Medium, TicketStatus.InProgress, contoso.Id, billing.Id, sara.Id),
+            BuildTicket("TCK-0005", "Refund request pending", TicketPriority.High, TicketStatus.Resolved, northwind.Id, billing.Id, sara.Id),
+            BuildTicket("TCK-0006", "Security alert investigation", TicketPriority.Critical, TicketStatus.Open, northwind.Id, technical.Id, null));
         _db.SaveChanges();
 
         Ticket BuildTicket(
             string reference,
+            string title,
             TicketPriority priority,
             TicketStatus status,
             int customerId,
@@ -359,7 +444,7 @@ public sealed class TicketQueriesTests : IDisposable
         {
             var ticket = Ticket.Raise(
                 reference,
-                $"Ticket {reference}",
+                title,
                 "A description long enough for a support ticket.",
                 customerId,
                 categoryId,
