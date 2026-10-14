@@ -460,6 +460,26 @@ textarea[aria-invalid='true'] {
   border-left: 4px solid var(--colour-primary);
 }
 
+.triage-explanations {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 var(--gap);
+}
+
+.triage-explanations div {
+  display: grid;
+  grid-template-columns: minmax(90px, 120px) 1fr;
+  gap: 8px;
+}
+
+.triage-explanations dt {
+  font-weight: 600;
+}
+
+.triage-explanations dd {
+  margin: 0;
+}
+
 .pagination {
   display: flex;
   align-items: center;
