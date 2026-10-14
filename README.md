@@ -157,11 +157,12 @@ SDK: 351,055,860 bytes (226,014,849 bytes smaller, about 64%). Actual process UI
 8080; final image contains published output and ASP.NET runtime, no SDK. Development API stays
 on localhost:5080. Regression: 202 backend and 85 frontend tests; builds, formatting and lint pass.
 
-Warnings: transitive `System.Security.Cryptography.Pkcs` 9.0.11 has moderate/high denial-of-service
+Security remediation: SqlClient's transitive `System.Security.Cryptography.Pkcs` is centrally
+pinned from 9.0.11 to the patched 9.0.21 release, resolving moderate/high denial-of-service
 advisories ([moderate](https://github.com/advisories/GHSA-2fmv-rv2c-59x7),
-[high](https://github.com/advisories/GHSA-846f-f764-76mx)). An approved dependency remediation
-should precede security sign-off; this checkpoint does not upgrade dependencies or establish
-exploitability. Data Protection keys are ephemeral/unencrypted in containers; this does not
+[high](https://github.com/advisories/GHSA-846f-f764-76mx)). NuGet audit including transitive
+dependencies reports no vulnerable packages (2026-10-14). Data Protection keys are
+ephemeral/unencrypted in containers; this does not
 sign JWTs, but production features using Data Protection require durable encrypted key storage.
 
 ### Development agent credentials
