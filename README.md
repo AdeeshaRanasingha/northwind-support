@@ -117,14 +117,15 @@ Escalation actors now come exclusively from validated JWT identity.
 
 ## Quick start
 
-**Prerequisites:** .NET SDK 10 (`global.json`), Node.js 22 (`.nvmrc`; 20.19+ works), Docker.
+**Prerequisites:** Docker Desktop/Engine with Compose v2 (Linux containers), Node.js 22;
+.NET SDK 10 (`global.json`) is needed only for local backend builds/tests.
 
 ```bash
-cp .env.example .env          # optional, every value has a working default
-npm install                   # installs the web app
-npm run db:up                 # SQL Server 2022 in Docker on localhost:1433
-npm run api                   # terminal 1: migrates, seeds, then serves the API
-npm run web                   # terminal 2: React dev server
+cp .env.example .env          # replace SQL password and JWT signing-key placeholders
+docker build -f apps/api/Dockerfile -t northwind-support-api:dev .
+docker compose up -d --build  # healthy SQL Server, then API; retains the existing data volume
+npm ci                        # installs the web app from the lockfile
+npm run web                   # React dev server, proxies to Docker API
 ```
 
 | What | Where |
@@ -141,6 +142,27 @@ without exposing database errors. Business APIs still require JWT authentication
 
 In Development the API applies migrations and seeds demo data on startup. **Never commit real
 credentials.**
+
+Compose injects database/JWT settings at runtime; keep the existing database password when
+reusing a volume. SQL health uses the verified `/opt/mssql-tools18/bin/sqlcmd`; EF Core retries
+transient SQL connections. Production skips automatic demo initialization: deploy migrations,
+data and credentials deliberately. Never reset development volumes to troubleshoot startup.
+
+Docker verification (2026-10-14): isolated project `nwverify20261014`, new volume, no SQL host
+port, API port 15080. All three migrations applied; seeded 40 tickets, 6 agents (all hashed),
+6 customers and 5 categories. Login, `/me`, authenticated tickets and anonymous health returned
+200; tickets without JWT returned 401. Restart retained counts and skipped duplicate seeding.
+Two repeat builds reported `dotnet restore ... CACHED`. Runtime image: 125,041,011 bytes versus
+SDK: 351,055,860 bytes (226,014,849 bytes smaller, about 64%). Actual process UID 1654, HTTP
+8080; final image contains published output and ASP.NET runtime, no SDK. Development API stays
+on localhost:5080. Regression: 202 backend and 85 frontend tests; builds, formatting and lint pass.
+
+Warnings: transitive `System.Security.Cryptography.Pkcs` 9.0.11 has moderate/high denial-of-service
+advisories ([moderate](https://github.com/advisories/GHSA-2fmv-rv2c-59x7),
+[high](https://github.com/advisories/GHSA-846f-f764-76mx)). An approved dependency remediation
+should precede security sign-off; this checkpoint does not upgrade dependencies or establish
+exploitability. Data Protection keys are ephemeral/unencrypted in containers; this does not
+sign JWTs, but production features using Data Protection require durable encrypted key storage.
 
 ### Development agent credentials
 
