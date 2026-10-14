@@ -146,6 +146,12 @@ The hash is stored on `Agent`, keeping one identity per support agent. A separat
 rejected because the assignment has no non-agent accounts and it would add a redundant one-to-one
 identity lifecycle. Production credentials must be provisioned separately.
 
+JWT access tokens last 60 minutes and validate issuer, audience, signature and lifetime with no
+clock-skew allowance. Before starting the API, set `Jwt__SigningKey` to a unique value of at least
+32 characters (see `.env.example`); never commit a real signing key. `POST /api/auth/login` accepts
+the development credentials above, and `GET /api/auth/me` returns the agent identified by the
+validated token. Other endpoints remain public until the central authorization checkpoint.
+
 **Visual Studio 2026:** run `npm run db:up`, open `SupportDesk.sln`, set
 **SupportDesk.Presentation** as the startup project, and press F5 on the **https** profile.
 

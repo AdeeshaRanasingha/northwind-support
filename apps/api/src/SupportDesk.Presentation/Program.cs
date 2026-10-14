@@ -1,8 +1,10 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using SupportDesk.Application;
 using SupportDesk.Domain.Aggregates.Tickets;
 using SupportDesk.Infrastructure;
+using SupportDesk.Infrastructure.Authentication;
 using SupportDesk.Presentation.Extensions;
 using SupportDesk.Presentation.Filters;
 using SupportDesk.Presentation.Middleware;
@@ -28,6 +30,23 @@ builder.Services.AddCors(options => options.AddPolicy(
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+var jwtSettings = builder.Configuration
+    .GetSection(JwtSettings.SectionName)
+    .Get<JwtSettings>()
+    ?? throw new InvalidOperationException("The Jwt configuration section is required.");
+if (!jwtSettings.IsValid())
+{
+    throw new InvalidOperationException(
+        "Jwt issuer, audience, expiration and a signing key of at least 32 characters are required.");
+}
+
+builder.Services.AddSingleton(jwtSettings);
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+        options.TokenValidationParameters = AgentAuthenticationService.CreateValidationParameters(jwtSettings));
+builder.Services.AddAuthorization();
 
 builder.Services
     .AddOptions<SlaSettings>()
@@ -58,6 +77,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors(FrontendCorsPolicy);
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 
