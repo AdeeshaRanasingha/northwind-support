@@ -18,6 +18,12 @@
   --gap: 16px;
 }
 
+.login-panel {
+  width: 100%;
+  max-width: 440px;
+  margin: 24px auto;
+}
+
 * {
   box-sizing: border-box;
 }

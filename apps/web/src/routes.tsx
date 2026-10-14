@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { App } from './App';
+import { LoginPage } from './features/auth/LoginPage';
 import { NotFoundPage } from './features/NotFoundPage';
 import { CustomerDetailPage } from './features/customers/CustomerDetailPage';
 import { CustomerListPage } from './features/customers/CustomerListPage';
@@ -12,6 +13,7 @@ export const router = createBrowserRouter([
     path: '/',
     element: <App />,
     children: [
+      { path: 'login', element: <LoginPage /> },
       { index: true, element: <Navigate to="/tickets" replace /> },
       { path: 'tickets', element: <TicketListPage /> },
       { path: 'tickets/new', element: <CreateTicketPage /> },
