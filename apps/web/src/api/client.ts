@@ -1,5 +1,5 @@
 import type { ProblemDetails } from '../types/api';
-import { getSession } from './session';
+import { clearSession, getSession } from './session';
 
 /**
  * Where the API lives. In development this stays '/api' and the Vite dev server proxies it
@@ -32,11 +32,13 @@ export class ApiError extends Error {
  */
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
+  const isLogin = path.split('?')[0] === '/auth/login';
+  const sentSession = isLogin ? null : getSession();
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  if (path.split('?')[0] === '/auth/login') {
+  if (isLogin) {
     headers.delete('Authorization');
   } else {
-    const session = getSession();
+    const session = sentSession;
     if (session) headers.set('Authorization', `Bearer ${session.accessToken}`);
     else headers.delete('Authorization');
   }
@@ -46,6 +48,9 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    if (response.status === 401 && sentSession && getSession() === sentSession) {
+      clearSession();
+    }
     const problem = await readProblem(response);
 
     throw new ApiError(

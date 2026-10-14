@@ -64,7 +64,6 @@ function ticket(overrides: Partial<TicketDetail> = {}): TicketDetail {
 
 async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole('textbox', { name: 'Reason' }), 'Customer impact increased');
-  await user.type(screen.getByRole('textbox', { name: 'Escalated by' }), 'Support Lead');
 }
 
 describe('EscalationPanel', () => {
@@ -77,7 +76,6 @@ describe('EscalationPanel', () => {
     render(<EscalationPanel ticket={ticket()} onEscalated={vi.fn()} />);
 
     await user.type(screen.getByRole('textbox', { name: 'Reason' }), ' 123 ');
-    await user.type(screen.getByRole('textbox', { name: 'Escalated by' }), 'Support Lead');
     await user.click(screen.getByRole('button', { name: 'Escalate ticket' }));
 
     expect(screen.getByText('Reason must contain 5 to 500 characters.')).toBeInTheDocument();
@@ -91,22 +89,15 @@ describe('EscalationPanel', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Reason' }), {
       target: { value: 'x'.repeat(501) },
     });
-    await user.type(screen.getByRole('textbox', { name: 'Escalated by' }), 'Support Lead');
     await user.click(screen.getByRole('button', { name: 'Escalate ticket' }));
 
     expect(screen.getByText('Reason must contain 5 to 500 characters.')).toBeInTheDocument();
     expect(escalateTicket).not.toHaveBeenCalled();
   });
 
-  it('blocks a blank actor', async () => {
-    const user = userEvent.setup();
+  it('does not offer a caller-supplied actor field', () => {
     render(<EscalationPanel ticket={ticket()} onEscalated={vi.fn()} />);
-
-    await user.type(screen.getByRole('textbox', { name: 'Reason' }), 'Customer impact increased');
-    await user.click(screen.getByRole('button', { name: 'Escalate ticket' }));
-
-    expect(screen.getByText(/Escalated by is required/)).toBeInTheDocument();
-    expect(escalateTicket).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', { name: 'Escalated by' })).not.toBeInTheDocument();
   });
 
   it('submits trimmed values and refreshes data after success', async () => {
@@ -116,12 +107,10 @@ describe('EscalationPanel', () => {
     render(<EscalationPanel ticket={ticket()} onEscalated={onEscalated} />);
 
     await user.type(screen.getByRole('textbox', { name: 'Reason' }), '  Customer impact increased  ');
-    await user.type(screen.getByRole('textbox', { name: 'Escalated by' }), '  Support Lead  ');
     await user.click(screen.getByRole('button', { name: 'Escalate ticket' }));
 
     expect(escalateTicket).toHaveBeenCalledWith(12, {
       reason: 'Customer impact increased',
-      escalatedBy: 'Support Lead',
     });
     expect(onEscalated).toHaveBeenCalledOnce();
   });

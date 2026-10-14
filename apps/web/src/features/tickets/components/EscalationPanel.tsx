@@ -11,14 +11,12 @@ interface EscalationPanelProps {
 
 interface ValidationErrors {
   reason?: string;
-  escalatedBy?: string;
 }
 
 const blockedStatuses = new Set<TicketDetail['status']>(['Resolved', 'Closed']);
 
 export function EscalationPanel({ ticket, onEscalated }: EscalationPanelProps) {
   const [reason, setReason] = useState('');
-  const [escalatedBy, setEscalatedBy] = useState('');
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [requestError, setRequestError] = useState<string>();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -46,15 +44,10 @@ export function EscalationPanel({ ticket, onEscalated }: EscalationPanelProps) {
     }
 
     const trimmedReason = reason.trim();
-    const trimmedActor = escalatedBy.trim();
     const nextErrors: ValidationErrors = {};
 
     if (trimmedReason.length < 5 || trimmedReason.length > 500) {
       nextErrors.reason = 'Reason must contain 5 to 500 characters.';
-    }
-
-    if (trimmedActor.length === 0 || trimmedActor.length > 100) {
-      nextErrors.escalatedBy = 'Escalated by is required and cannot exceed 100 characters.';
     }
 
     setErrors(nextErrors);
@@ -70,7 +63,6 @@ export function EscalationPanel({ ticket, onEscalated }: EscalationPanelProps) {
     try {
       await ticketsApi.escalateTicket(ticket.id, {
         reason: trimmedReason,
-        escalatedBy: trimmedActor,
       });
       await onEscalated();
       setReason('');
@@ -78,7 +70,6 @@ export function EscalationPanel({ ticket, onEscalated }: EscalationPanelProps) {
       if (caught instanceof ApiError && caught.status === 400) {
         setErrors({
           reason: firstFieldError(caught, 'Reason'),
-          escalatedBy: firstFieldError(caught, 'EscalatedBy'),
         });
       }
 
@@ -102,18 +93,6 @@ export function EscalationPanel({ ticket, onEscalated }: EscalationPanelProps) {
               maxLength={500}
               disabled={isSubmitting}
               onChange={(event) => setReason(event.target.value)}
-            />
-          )}
-        </Field>
-
-        <Field id="escalated-by" label="Escalated by" error={errors.escalatedBy}>
-          {(fieldProps) => (
-            <input
-              {...fieldProps}
-              value={escalatedBy}
-              maxLength={100}
-              disabled={isSubmitting}
-              onChange={(event) => setEscalatedBy(event.target.value)}
             />
           )}
         </Field>
