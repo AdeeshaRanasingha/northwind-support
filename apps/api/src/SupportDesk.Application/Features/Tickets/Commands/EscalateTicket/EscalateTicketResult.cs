@@ -1,3 +1,4 @@
+using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Domain.Aggregates.Tickets;
 
 namespace SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
@@ -11,17 +12,5 @@ public sealed record EscalateTicketResult(
     int? AssignedAgentId,
     DateTime DueAtUtc,
     DateTime UpdatedAtUtc,
-    EscalationRecordResult Escalation,
+    TicketEscalationDto Escalation,
     string AssignmentReason);
-
-public sealed record EscalationRecordResult(
-    int TicketId,
-    TicketPriority FromPriority,
-    TicketPriority ToPriority,
-    int? FromAgentId,
-    int? ToAgentId,
-    DateTime? FromDueAtUtc,
-    DateTime? ToDueAtUtc,
-    string Reason,
-    string EscalatedBy,
-    DateTime EscalatedAtUtc);

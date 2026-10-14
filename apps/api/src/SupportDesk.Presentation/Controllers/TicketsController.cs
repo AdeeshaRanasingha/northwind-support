@@ -6,6 +6,7 @@ using SupportDesk.Application.Features.Tickets.Commands.ChangeTicketStatus;
 using SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
 using SupportDesk.Application.Features.Tickets.Commands.RaiseTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
+using SupportDesk.Application.Features.Tickets.Queries.GetTicketEscalations;
 using SupportDesk.Application.Features.Tickets.Queries.SearchTickets;
 
 namespace SupportDesk.Presentation.Controllers;
@@ -76,4 +77,14 @@ public sealed class TicketsController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>Returns immutable escalation history, newest first.</summary>
+    [HttpGet("{id:int}/escalations")]
+    [ProducesResponseType<IReadOnlyList<TicketEscalationDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<TicketEscalationDto>>> GetEscalations(
+        int id,
+        [FromServices] GetTicketEscalationsQueryHandler handler,
+        CancellationToken ct) =>
+        Ok(await handler.HandleAsync(id, ct));
 }

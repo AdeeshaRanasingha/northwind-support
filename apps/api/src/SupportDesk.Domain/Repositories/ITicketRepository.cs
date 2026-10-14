@@ -11,6 +11,9 @@ public interface ITicketRepository
     /// <summary>Loads a tracked ticket for modification, or null when it does not exist.</summary>
     Task<Ticket?> GetByIdAsync(int id, CancellationToken ct);
 
+    /// <summary>Checks for a ticket without tracking it.</summary>
+    Task<bool> ExistsAsync(int id, CancellationToken ct);
+
     /// <summary>The next unused ticket reference, e.g. TCK-0041.</summary>
     Task<string> NextReferenceAsync(CancellationToken ct);
 

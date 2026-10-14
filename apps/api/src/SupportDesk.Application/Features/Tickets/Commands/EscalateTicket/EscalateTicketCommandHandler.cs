@@ -1,4 +1,5 @@
 using SupportDesk.Application.Abstractions;
+using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Exceptions;
 using SupportDesk.Domain.Aggregates.Tickets;
 using SupportDesk.Domain.Repositories;
@@ -59,7 +60,8 @@ public sealed class EscalateTicketCommandHandler(
             ticket.AssignedAgentId,
             ticket.DueAtUtc!.Value,
             ticket.UpdatedAtUtc,
-            new EscalationRecordResult(
+            new TicketEscalationDto(
+                escalation.Id,
                 escalation.TicketId,
                 escalation.FromPriority,
                 escalation.ToPriority,

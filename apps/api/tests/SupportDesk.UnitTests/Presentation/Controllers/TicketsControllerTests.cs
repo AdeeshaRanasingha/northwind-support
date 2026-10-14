@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Exceptions;
 using SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
+using SupportDesk.Application.Features.Tickets.Queries.GetTicketEscalations;
 using SupportDesk.Domain.Aggregates.Agents;
 using SupportDesk.Domain.Aggregates.Tickets;
 using SupportDesk.Domain.Exceptions;
@@ -133,6 +134,29 @@ public sealed class TicketsControllerTests
         var route = Assert.Single(action!.GetCustomAttributes(typeof(HttpPostAttribute), inherit: false));
 
         Assert.Equal("{id:int}/escalate", Assert.IsType<HttpPostAttribute>(route).Template);
+    }
+
+    [Fact]
+    public async Task GetEscalations_ForExistingTicket_Returns200WithHistory()
+    {
+        var context = new TicketCommandTestContext();
+        context.Tickets.Setup(repository => repository.ExistsAsync(42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        context.Escalations.Setup(repository => repository.GetByTicketIdAsync(
+                42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new TicketEscalation(
+                42, TicketPriority.Low, TicketPriority.Medium, null, null, null,
+                FixedClock.DefaultNow.AddHours(24), "Customer impact increased", "shift-lead",
+                FixedClock.DefaultNow)]);
+        var handler = new GetTicketEscalationsQueryHandler(
+            context.Tickets.Object, context.Escalations.Object);
+
+        var result = await new TicketsController().GetEscalations(
+            42, handler, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(200, ok.StatusCode);
+        Assert.Single(Assert.IsAssignableFrom<IReadOnlyList<TicketEscalationDto>>(ok.Value));
     }
 
     private static Ticket ExistingTicket(TicketCommandTestContext context, TicketPriority priority)
