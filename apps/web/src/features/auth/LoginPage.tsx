@@ -1,7 +1,9 @@
 import { useRef, useState, type FormEvent } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { authApi, type LoginResponse } from '../../api/auth';
 import { ApiError } from '../../api/client';
-import { saveSession } from '../../api/session';
+import { saveSession, useSession } from '../../api/session';
+import { safeReturnPath } from './returnPath';
 import { Field } from '../../components/Field';
 
 interface LoginErrors {
@@ -10,12 +12,13 @@ interface LoginErrors {
 }
 
 export function LoginPage() {
+  const session = useSession();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<LoginErrors>({});
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
-  const [agentName, setAgentName] = useState<string>();
   const submitting = useRef(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -30,7 +33,6 @@ export function LoginPage() {
     if (!password) nextErrors.password = 'Password is required.';
     setErrors(nextErrors);
     setError(undefined);
-    setAgentName(undefined);
     if (Object.keys(nextErrors).length) return;
 
     submitting.current = true;
@@ -38,7 +40,6 @@ export function LoginPage() {
     try {
       const result: LoginResponse = await authApi.login({ email: trimmedEmail, password });
       saveSession(result);
-      setAgentName(result.fullName);
       setPassword('');
     } catch (caught) {
       if (caught instanceof ApiError) {
@@ -53,6 +54,8 @@ export function LoginPage() {
     }
   }
 
+  if (session) return <Navigate to={safeReturnPath(location.state)} replace />;
+
   return <section className="card login-panel" aria-labelledby="login-heading">
     <h1 id="login-heading">Agent sign in</h1>
     <p>Sign in with your support agent account.</p>
@@ -66,7 +69,6 @@ export function LoginPage() {
           value={password} disabled={pending} onChange={(event) => setPassword(event.target.value)} />}
       </Field>
       {error && <p role="alert" className="field__error">{error}</p>}
-      {agentName && <p role="status">Signed in as {agentName}.</p>}
       <button className="button button--primary" type="submit" disabled={pending}>
         {pending ? 'Signing in...' : 'Sign in'}
       </button>

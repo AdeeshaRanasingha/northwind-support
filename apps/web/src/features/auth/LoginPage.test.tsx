@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { authApi, type LoginResponse } from '../../api/auth';
 import { ApiError } from '../../api/client';
 import { clearSession, getSession } from '../../api/session';
@@ -14,8 +15,15 @@ function fillForm(email = 'agent@example.test', password = 'test-password') {
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: password } });
 }
 
+function renderLogin() {
+  return render(<MemoryRouter initialEntries={['/login']}><Routes>
+    <Route path="/login" element={<LoginPage />} />
+    <Route path="/tickets" element={<p role="status">Ticket list</p>} />
+  </Routes></MemoryRouter>);
+}
+
 it('blocks required fields and malformed email without calling the API', () => {
-  render(<LoginPage />);
+  renderLogin();
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
   expect(screen.getByText('Email is required.')).toBeInTheDocument();
   expect(screen.getByText('Password is required.')).toBeInTheDocument();
@@ -28,13 +36,12 @@ it('blocks required fields and malformed email without calling the API', () => {
 it('submits trimmed email with the unchanged masked password and displays success', async () => {
   vi.mocked(authApi.login).mockResolvedValue({ accessToken: 'test-token', expiresAtUtc: '2030-01-01T00:00:00Z',
     agentId: 1, fullName: 'Alex Turner', email: 'agent@example.test' });
-  render(<LoginPage />);
+  renderLogin();
   fillForm('  agent@example.test  ', ' password with spaces ');
   expect(screen.getByLabelText('Password')).toHaveAttribute('type', 'password');
   fireEvent.submit(screen.getByRole('button', { name: 'Sign in' }).closest('form')!);
-  expect(await screen.findByRole('status')).toHaveTextContent('Signed in as Alex Turner.');
+  expect(await screen.findByRole('status')).toHaveTextContent('Ticket list');
   expect(authApi.login).toHaveBeenCalledWith({ email: 'agent@example.test', password: ' password with spaces ' });
-  expect(screen.getByLabelText('Password')).toHaveValue('');
   expect(getSession()).toEqual({ accessToken: 'test-token', expiresAtUtc: '2030-01-01T00:00:00Z' });
   expect(sessionStorage.getItem('supportdesk.session')).not.toContain('password with spaces');
 });
@@ -45,7 +52,7 @@ it.each([
   { makeError: () => new ApiError(500, 'Service unavailable'), message: 'Service unavailable' },
 ])('displays login failure without success: $message', async ({ makeError, message }) => {
   vi.mocked(authApi.login).mockRejectedValue(makeError());
-  render(<LoginPage />);
+  renderLogin();
   fillForm();
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
@@ -57,7 +64,7 @@ it.each([
 it('disables fields and prevents duplicate submissions while pending', async () => {
   let resolve: ((result: LoginResponse) => void) | undefined;
   vi.mocked(authApi.login).mockReturnValue(new Promise((done) => { resolve = done; }));
-  render(<LoginPage />);
+  renderLogin();
   fillForm();
   const form = screen.getByRole('button', { name: 'Sign in' }).closest('form')!;
   fireEvent.submit(form);
