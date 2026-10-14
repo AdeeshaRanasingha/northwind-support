@@ -130,8 +130,14 @@ npm run web                   # terminal 2: React dev server
 | What | Where |
 | --- | --- |
 | Web app | http://localhost:5173 |
-| API | https://localhost:7043 (also http://localhost:5043) |
-| Swagger | https://localhost:7043/swagger |
+| API | Docker: http://localhost:5080; local dotnet: http://localhost:5043 |
+| Swagger | Docker: http://localhost:5080/swagger; local: https://localhost:7043/swagger |
+
+Vite proxies `/api` to the Docker API by default. For local dotnet development, set
+`VITE_API_PROXY_TARGET=http://localhost:5043` in `apps/web/.env.local` or the terminal environment
+and restart Vite. Only frontend `VITE_` settings are loaded; never put backend secrets in them.
+Anonymous `GET /health` returns 200 when EF Core can connect to the database, otherwise 503,
+without exposing database errors. Business APIs still require JWT authentication.
 
 In Development the API applies migrations and seeds demo data on startup. **Never commit real
 credentials.**
