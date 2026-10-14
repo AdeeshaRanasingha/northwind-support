@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../../api/client';
 import { ticketsApi } from '../../../api/tickets';
-import type { TicketDetail } from '../../../types/api';
+import type { EscalateTicketResult, TicketDetail } from '../../../types/api';
 import { EscalationPanel } from './EscalationPanel';
 
 vi.mock('../../../api/tickets', () => ({
@@ -11,6 +11,30 @@ vi.mock('../../../api/tickets', () => ({
 }));
 
 const escalateTicket = vi.mocked(ticketsApi.escalateTicket);
+
+const escalationResult: EscalateTicketResult = {
+  ticketId: 12,
+  reference: 'TCK-0012',
+  status: 'InProgress',
+  priority: 'Critical',
+  assignedAgentId: 4,
+  dueAtUtc: '2026-10-14T12:00:00Z',
+  updatedAtUtc: '2026-10-14T08:00:00Z',
+  assignmentReason: 'Current agent remains eligible.',
+  escalation: {
+    id: 3,
+    ticketId: 12,
+    fromPriority: 'High',
+    toPriority: 'Critical',
+    fromAgentId: 4,
+    toAgentId: 4,
+    fromDueAtUtc: '2026-10-14T16:00:00Z',
+    toDueAtUtc: '2026-10-14T12:00:00Z',
+    reason: 'Customer impact increased',
+    escalatedBy: 'Support Lead',
+    escalatedAtUtc: '2026-10-14T08:00:00Z',
+  },
+};
 
 function ticket(overrides: Partial<TicketDetail> = {}): TicketDetail {
   return {
@@ -88,7 +112,7 @@ describe('EscalationPanel', () => {
   it('submits trimmed values and refreshes data after success', async () => {
     const user = userEvent.setup();
     const onEscalated = vi.fn().mockResolvedValue(undefined);
-    escalateTicket.mockResolvedValue({} as Awaited<ReturnType<typeof ticketsApi.escalateTicket>>);
+    escalateTicket.mockResolvedValue(escalationResult);
     render(<EscalationPanel ticket={ticket()} onEscalated={onEscalated} />);
 
     await user.type(screen.getByRole('textbox', { name: 'Reason' }), '  Customer impact increased  ');
@@ -106,7 +130,7 @@ describe('EscalationPanel', () => {
     const user = userEvent.setup();
     let resolveRequest: (() => void) | undefined;
     escalateTicket.mockImplementation(
-      () => new Promise((resolve) => (resolveRequest = () => resolve({} as never))),
+      () => new Promise((resolve) => (resolveRequest = () => resolve(escalationResult))),
     );
     render(<EscalationPanel ticket={ticket()} onEscalated={vi.fn()} />);
     await fillValidForm(user);

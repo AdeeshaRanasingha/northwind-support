@@ -18,6 +18,18 @@ const slaStatuses: ReadonlyArray<{ value: SlaStatus; label: string }> = [
   { value: 'Met', label: 'Met' },
   { value: 'NotApplicable', label: 'No SLA' },
 ];
+const sortOptions: ReadonlyArray<{
+  value: string;
+  label: string;
+  sortBy: Filters['sortBy'];
+  sortDirection: Filters['sortDirection'];
+}> = [
+  { value: 'createdAtUtc:desc', label: 'Newest first', sortBy: 'createdAtUtc', sortDirection: 'desc' },
+  { value: 'createdAtUtc:asc', label: 'Oldest first', sortBy: 'createdAtUtc', sortDirection: 'asc' },
+  { value: 'dueAtUtc:asc', label: 'Due soonest', sortBy: 'dueAtUtc', sortDirection: 'asc' },
+  { value: 'priority:desc', label: 'Highest priority', sortBy: 'priority', sortDirection: 'desc' },
+  { value: 'updatedAtUtc:desc', label: 'Recently updated', sortBy: 'updatedAtUtc', sortDirection: 'desc' },
+];
 
 interface TicketFiltersProps {
   filters: Filters;
@@ -62,9 +74,7 @@ export function TicketFilters({
           <select
             id="filter-status"
             value={filters.status ?? ''}
-            onChange={(event) =>
-              onChange({ status: (event.target.value || undefined) as TicketStatus | undefined })
-            }
+            onChange={(event) => onChange({ status: findValue(statuses, event.target.value) })}
           >
             <option value="">All statuses</option>
             {statuses.map((status) => (
@@ -82,9 +92,7 @@ export function TicketFilters({
           <select
             id="filter-priority"
             value={filters.priority ?? ''}
-            onChange={(event) =>
-              onChange({ priority: (event.target.value || undefined) as TicketPriority | undefined })
-            }
+            onChange={(event) => onChange({ priority: findValue(priorities, event.target.value) })}
           >
             <option value="">All priorities</option>
             {priorities.map((priority) => (
@@ -103,7 +111,9 @@ export function TicketFilters({
             id="filter-sla-status"
             value={filters.slaStatus ?? ''}
             onChange={(event) =>
-              onChange({ slaStatus: (event.target.value || undefined) as SlaStatus | undefined })
+              onChange({
+                slaStatus: slaStatuses.find(({ value }) => value === event.target.value)?.value,
+              })
             }
           >
             <option value="">All SLA statuses</option>
@@ -179,18 +189,17 @@ export function TicketFilters({
             id="filter-sort"
             value={`${filters.sortBy}:${filters.sortDirection}`}
             onChange={(event) => {
-              const [sortBy, sortDirection] = event.target.value.split(':');
-              onChange({
-                sortBy: sortBy as Filters['sortBy'],
-                sortDirection: sortDirection as Filters['sortDirection'],
-              });
+              const option = sortOptions.find(({ value }) => value === event.target.value);
+              if (option) {
+                onChange({ sortBy: option.sortBy, sortDirection: option.sortDirection });
+              }
             }}
           >
-            <option value="createdAtUtc:desc">Newest first</option>
-            <option value="createdAtUtc:asc">Oldest first</option>
-            <option value="dueAtUtc:asc">Due soonest</option>
-            <option value="priority:desc">Highest priority</option>
-            <option value="updatedAtUtc:desc">Recently updated</option>
+            {sortOptions.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -211,4 +220,8 @@ export function TicketFilters({
       </div>
     </section>
   );
+}
+
+function findValue<T extends string>(allowed: readonly T[], value: string): T | undefined {
+  return allowed.find((candidate) => candidate === value);
 }
