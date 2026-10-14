@@ -22,11 +22,12 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock, SlaEvaluato
     /// </remarks>
     public async Task<PagedResult<TicketListItemDto>> GetPagedAsync(TicketQuery query, CancellationToken ct)
     {
-        var tickets = ApplyFilters(TicketsWithLabels(), query);
+        var now = clock.UtcNow;
+        var tickets = ApplyFilters(
+            TicketsWithLabels(), query, now, slaEvaluator.AtRiskThresholdPercent,
+            db.Database.IsSqlServer());
 
         var totalCount = await tickets.CountAsync(ct);
-
-        var now = clock.UtcNow;
 
         var items = await ApplySort(tickets, query)
             .Skip((query.Page - 1) * query.PageSize)
@@ -134,7 +135,10 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock, SlaEvaluato
 
     private static IQueryable<TicketWithLabels> ApplyFilters(
         IQueryable<TicketWithLabels> source,
-        TicketQuery query)
+        TicketQuery query,
+        DateTime nowUtc,
+        double atRiskThresholdPercent,
+        bool useSqlServerDateDiff)
     {
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -175,7 +179,75 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock, SlaEvaluato
             source = source.Where(x => x.Ticket.AssignedAgentId == null);
         }
 
+        if (query.SlaStatus is { } slaStatus)
+        {
+            source = ApplySlaFilter(
+                source, slaStatus, nowUtc, atRiskThresholdPercent, useSqlServerDateDiff);
+        }
+
         return source;
+    }
+
+    private static IQueryable<TicketWithLabels> ApplySlaFilter(
+        IQueryable<TicketWithLabels> source,
+        SlaStatus slaStatus,
+        DateTime nowUtc,
+        double atRiskThresholdPercent,
+        bool useSqlServerDateDiff)
+    {
+        if (slaStatus == SlaStatus.NotApplicable)
+        {
+            return source.Where(x => x.Ticket.DueAtUtc == null);
+        }
+
+        if (slaStatus == SlaStatus.Met)
+        {
+            return source.Where(x =>
+                x.Ticket.DueAtUtc != null
+                && x.Ticket.ResolvedAtUtc != null
+                && x.Ticket.ResolvedAtUtc <= x.Ticket.DueAtUtc);
+        }
+
+        if (slaStatus == SlaStatus.Breached)
+        {
+            return source.Where(x =>
+                x.Ticket.DueAtUtc != null
+                && (x.Ticket.ResolvedAtUtc != null
+                    ? x.Ticket.ResolvedAtUtc > x.Ticket.DueAtUtc
+                    : nowUtc > x.Ticket.DueAtUtc));
+        }
+
+        var unresolvedAndNotBreached = source.Where(x =>
+            x.Ticket.DueAtUtc != null
+            && x.Ticket.ResolvedAtUtc == null
+            && nowUtc <= x.Ticket.DueAtUtc);
+
+        if (useSqlServerDateDiff)
+        {
+            return slaStatus == SlaStatus.AtRisk
+                ? unresolvedAndNotBreached.Where(x =>
+                    EF.Functions.DateDiffMillisecond(nowUtc, x.Ticket.DueAtUtc!.Value) * 100.0
+                    <= EF.Functions.DateDiffMillisecond(
+                            x.SlaStartedAtUtc, x.Ticket.DueAtUtc.Value)
+                        * atRiskThresholdPercent)
+                : unresolvedAndNotBreached.Where(x =>
+                    EF.Functions.DateDiffMillisecond(nowUtc, x.Ticket.DueAtUtc!.Value) * 100.0
+                    > EF.Functions.DateDiffMillisecond(
+                            x.SlaStartedAtUtc, x.Ticket.DueAtUtc.Value)
+                        * atRiskThresholdPercent);
+        }
+
+        return slaStatus == SlaStatus.AtRisk
+            ? unresolvedAndNotBreached.Where(x =>
+                ((x.Ticket.DueAtUtc!.Value.Ticks - nowUtc.Ticks)
+                    / TimeSpan.TicksPerMillisecond) * 100
+                <= ((x.Ticket.DueAtUtc.Value.Ticks - x.SlaStartedAtUtc.Ticks)
+                    / TimeSpan.TicksPerMillisecond) * atRiskThresholdPercent)
+            : unresolvedAndNotBreached.Where(x =>
+                ((x.Ticket.DueAtUtc!.Value.Ticks - nowUtc.Ticks)
+                    / TimeSpan.TicksPerMillisecond) * 100
+                > ((x.Ticket.DueAtUtc.Value.Ticks - x.SlaStartedAtUtc.Ticks)
+                    / TimeSpan.TicksPerMillisecond) * atRiskThresholdPercent);
     }
 
     private static IQueryable<TicketWithLabels> ApplySort(IQueryable<TicketWithLabels> source, TicketQuery query)

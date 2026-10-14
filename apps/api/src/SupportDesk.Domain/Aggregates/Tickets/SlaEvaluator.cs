@@ -8,6 +8,8 @@ public sealed class SlaEvaluator
 {
     private readonly double _atRiskThreshold;
 
+    public double AtRiskThresholdPercent { get; }
+
     public SlaEvaluator(SlaSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -17,7 +19,8 @@ public sealed class SlaEvaluator
             throw new ArgumentException(error, nameof(settings));
         }
 
-        _atRiskThreshold = settings.AtRiskThresholdPercent / 100;
+        AtRiskThresholdPercent = settings.AtRiskThresholdPercent;
+        _atRiskThreshold = AtRiskThresholdPercent / 100;
     }
 
     /// <summary>
