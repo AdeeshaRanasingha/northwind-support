@@ -150,7 +150,15 @@ JWT access tokens last 60 minutes and validate issuer, audience, signature and l
 clock-skew allowance. Before starting the API, set `Jwt__SigningKey` to a unique value of at least
 32 characters (see `.env.example`); never commit a real signing key. `POST /api/auth/login` accepts
 the development credentials above, and `GET /api/auth/me` returns the agent identified by the
-validated token. Other endpoints remain public until the central authorization checkpoint.
+validated token. API endpoints require JWT authorization by default; login and Swagger remain public.
+
+The frontend stores only the access token and its expiration in `sessionStorage`: refreshes in
+the same tab restore a valid session, while expired or malformed sessions are discarded; tab
+closure normally ends storage. React subscribes to session changes, and the shared API client
+attaches valid tokens to requests, excluding login. The server remains authoritative for JWT
+validation. Unlike HttpOnly cookies, this storage is readable by JavaScript and vulnerable to
+token theft through XSS. Production should use an appropriate HttpOnly/Secure/SameSite cookie
+or server-managed session design with CSRF protection, alongside XSS prevention and HTTPS.
 
 **Visual Studio 2026:** run `npm run db:up`, open `SupportDesk.sln`, set
 **SupportDesk.Presentation** as the startup project, and press F5 on the **https** profile.

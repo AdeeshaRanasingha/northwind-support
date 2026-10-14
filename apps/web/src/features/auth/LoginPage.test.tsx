@@ -2,11 +2,12 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { authApi, type LoginResponse } from '../../api/auth';
 import { ApiError } from '../../api/client';
+import { clearSession, getSession } from '../../api/session';
 import { LoginPage } from './LoginPage';
 
 vi.mock('../../api/auth', () => ({ authApi: { login: vi.fn() } }));
-beforeEach(() => { vi.mocked(authApi.login).mockReset(); });
-afterEach(cleanup);
+beforeEach(() => { vi.mocked(authApi.login).mockReset(); clearSession(); });
+afterEach(() => { cleanup(); clearSession(); });
 
 function fillForm(email = 'agent@example.test', password = 'test-password') {
   fireEvent.change(screen.getByLabelText('Email'), { target: { value: email } });
@@ -34,6 +35,8 @@ it('submits trimmed email with the unchanged masked password and displays succes
   expect(await screen.findByRole('status')).toHaveTextContent('Signed in as Alex Turner.');
   expect(authApi.login).toHaveBeenCalledWith({ email: 'agent@example.test', password: ' password with spaces ' });
   expect(screen.getByLabelText('Password')).toHaveValue('');
+  expect(getSession()).toEqual({ accessToken: 'test-token', expiresAtUtc: '2030-01-01T00:00:00Z' });
+  expect(sessionStorage.getItem('supportdesk.session')).not.toContain('password with spaces');
 });
 
 it.each([

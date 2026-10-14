@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { authApi, type LoginResponse } from '../../api/auth';
 import { ApiError } from '../../api/client';
+import { saveSession } from '../../api/session';
 import { Field } from '../../components/Field';
 
 interface LoginErrors {
@@ -36,6 +37,7 @@ export function LoginPage() {
     setPending(true);
     try {
       const result: LoginResponse = await authApi.login({ email: trimmedEmail, password });
+      saveSession(result);
       setAgentName(result.fullName);
       setPassword('');
     } catch (caught) {
