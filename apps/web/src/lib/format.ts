@@ -5,12 +5,26 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 
+const utcDateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  timeZone: 'UTC',
+  timeZoneName: 'short',
+});
+
 export function formatDateTime(isoString: string | null): string {
   return isoString ? dateTimeFormatter.format(new Date(isoString)) : '-';
 }
 
 export function formatDate(isoString: string | null): string {
   return isoString ? dateFormatter.format(new Date(isoString)) : '-';
+}
+
+export function formatUtcDateTime(isoString: string | null): string {
+  return isoString ? utcDateTimeFormatter.format(new Date(isoString)) : 'No due date';
 }
 
 /** "In 3 hours" / "5 hours ago", for due dates. */

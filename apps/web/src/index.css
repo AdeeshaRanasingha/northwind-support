@@ -348,6 +348,59 @@ textarea[aria-invalid='true'] {
   white-space: pre-wrap;
 }
 
+.history-list {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.history-list__item {
+  padding: 12px;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+}
+
+.history-list__header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.history-list__header time,
+.history-list__actor {
+  color: var(--colour-muted);
+  font-size: 0.85rem;
+}
+
+.history-list__changes {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+}
+
+.history-list__changes div {
+  display: grid;
+  grid-template-columns: minmax(100px, 130px) 1fr;
+  gap: 8px;
+}
+
+.history-list__changes dt {
+  font-weight: 600;
+}
+
+.history-list__changes dd,
+.history-list__reason,
+.history-list__actor {
+  margin: 0;
+}
+
+.history-list__reason {
+  white-space: pre-wrap;
+}
+
 .spinner {
   color: var(--colour-muted);
 }

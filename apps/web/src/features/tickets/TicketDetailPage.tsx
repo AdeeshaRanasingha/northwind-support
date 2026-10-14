@@ -4,6 +4,7 @@ import { Spinner } from '../../components/Spinner';
 import { useReferenceData } from '../../hooks/useReferenceData';
 import { AssignAgentControl } from './components/AssignAgentControl';
 import { EscalationPanel } from './components/EscalationPanel';
+import { EscalationHistory } from './components/EscalationHistory';
 import { StatusActions } from './components/StatusActions';
 import { TicketSummary } from './components/TicketSummary';
 import { useTicket } from './hooks/useTicket';
@@ -60,6 +61,14 @@ export function TicketDetailPage() {
             onEscalated={async () => {
               await Promise.all([reload(), escalationHistory.reload()]);
             }}
+          />
+
+          <EscalationHistory
+            records={escalationHistory.data ?? []}
+            agents={reference.data?.agents ?? []}
+            isLoading={escalationHistory.isLoading}
+            error={escalationHistory.error}
+            onRetry={() => void escalationHistory.reload()}
           />
         </div>
 
