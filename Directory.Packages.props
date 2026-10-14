@@ -16,6 +16,8 @@
   </ItemGroup>
 
   <ItemGroup Label="Infrastructure">
+    <!-- Pin SqlClient's transitive dependency to the security-patched 9.x release. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
   </ItemGroup>
