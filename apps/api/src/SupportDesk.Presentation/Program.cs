@@ -1,5 +1,7 @@
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 using SupportDesk.Application;
+using SupportDesk.Domain.Aggregates.Tickets;
 using SupportDesk.Infrastructure;
 using SupportDesk.Presentation.Extensions;
 using SupportDesk.Presentation.Filters;
@@ -26,6 +28,18 @@ builder.Services.AddCors(options => options.AddPolicy(
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services
+    .AddOptions<SlaSettings>()
+    .Bind(builder.Configuration.GetSection(SlaSettings.SectionName))
+    .Validate(
+        settings => settings.IsValid(out _),
+        "The Sla configuration section contains invalid or missing values.")
+    .ValidateOnStart();
+builder.Services.AddSingleton(sp =>
+    new SlaDeadlineCalculator(sp.GetRequiredService<IOptions<SlaSettings>>().Value));
+builder.Services.AddSingleton(sp =>
+    new SlaEvaluator(sp.GetRequiredService<IOptions<SlaSettings>>().Value));
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);

@@ -35,7 +35,7 @@ public sealed class TicketQueriesTests : IDisposable
         _db.Database.EnsureCreated();
         Seed();
 
-        _queries = new TicketQueries(_db, new FixedClock());
+        _queries = new TicketQueries(_db, new FixedClock(), new SlaEvaluator(SlaSettings()));
     }
 
     [Fact]
@@ -415,10 +415,230 @@ public sealed class TicketQueriesTests : IDisposable
         Assert.Equal(["TCK-0002", "TCK-0001"], result.Items.Select(ticket => ticket.Reference));
     }
 
+    [Fact]
+    public async Task GetDetailAsync_ForEscalatedTicket_UsesLatestEscalationAsSlaWindowStart()
+    {
+        var createdAtUtc = FixedClock.DefaultNow.AddDays(-1);
+        var ticket = Ticket.Raise(
+            "TCK-0099",
+            "Escalated SLA query",
+            "A description long enough for a support ticket.",
+            _northwindCustomerId,
+            _technicalCategoryId,
+            TicketPriority.Medium,
+            createdAtUtc,
+            createdAtUtc.AddHours(24));
+        _db.Add(ticket);
+        await _db.SaveChangesAsync();
+        var escalationTimeUtc = FixedClock.DefaultNow.AddHours(-6);
+        var decision = new TicketEscalationService(new SlaDeadlineCalculator(SlaSettings())).Escalate(
+            ticket,
+            await _db.Set<Category>().SingleAsync(category => category.Id == _technicalCategoryId),
+            CustomerTier.Standard,
+            [],
+            "Customer impact increased",
+            "shift-lead",
+            escalationTimeUtc);
+        _db.Add(new TicketEscalation(
+            ticket.Id,
+            decision.FromPriority,
+            decision.ToPriority,
+            decision.FromAgentId,
+            decision.ToAgentId,
+            decision.FromDueAtUtc,
+            decision.ToDueAtUtc,
+            decision.Reason,
+            decision.EscalatedBy,
+            decision.EscalatedAtUtc));
+        await _db.SaveChangesAsync();
+
+        var result = await _queries.GetDetailAsync(ticket.Id, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(FixedClock.DefaultNow.AddHours(2), result.DueAtUtc);
+        Assert.Equal(SlaStatus.AtRisk, result.SlaStatus);
+    }
+
+    [Theory]
+    [MemberData(nameof(SlaFilterCases))]
+    public async Task GetPagedAsync_WithSlaStatus_FiltersInSqlAndMatchesEvaluator(
+        SlaStatus status,
+        int expectedCount)
+    {
+        await SeedSlaScenariosAsync();
+
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery { SlaStatus = status, PageSize = 100 }, CancellationToken.None);
+
+        Assert.Equal(expectedCount, result.TotalCount);
+        Assert.All(result.Items, item => Assert.Equal(status, item.SlaStatus));
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithSlaStatusAndOtherFilters_CombinesWithAnd()
+    {
+        await SeedSlaScenariosAsync();
+
+        var result = await _queries.GetPagedAsync(
+            new TicketQuery
+            {
+                SlaStatus = SlaStatus.AtRisk,
+                Status = TicketStatus.New,
+                Priority = TicketPriority.High,
+                Search = "Combined"
+            },
+            CancellationToken.None);
+
+        Assert.Equal("SLA-AT-RISK", Assert.Single(result.Items).Reference);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithSlaStatus_CountsBeforePagingAndHandlesPageBoundary()
+    {
+        await SeedSlaScenariosAsync();
+
+        var secondPage = await _queries.GetPagedAsync(
+            new TicketQuery { SlaStatus = SlaStatus.AtRisk, Page = 2, PageSize = 2 },
+            CancellationToken.None);
+        var outsidePage = await _queries.GetPagedAsync(
+            new TicketQuery { SlaStatus = SlaStatus.AtRisk, Page = 3, PageSize = 2 },
+            CancellationToken.None);
+
+        Assert.Single(secondPage.Items);
+        Assert.Equal(3, secondPage.TotalCount);
+        Assert.Equal(2, secondPage.TotalPages);
+        Assert.Empty(outsidePage.Items);
+        Assert.Equal(3, outsidePage.TotalCount);
+        Assert.Equal(2, outsidePage.TotalPages);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_WithConfiguredThreshold_ChangesSqlFilterResult()
+    {
+        AddSlaTicket(
+            "SLA-THRESHOLD",
+            "Configurable threshold",
+            TicketPriority.High,
+            FixedClock.DefaultNow.AddHours(-6),
+            FixedClock.DefaultNow.AddHours(4));
+        await _db.SaveChangesAsync();
+        var fiftyPercentQueries = new TicketQueries(
+            _db, new FixedClock(), new SlaEvaluator(SlaSettings(atRiskThresholdPercent: 50)));
+
+        var defaultThreshold = await _queries.GetPagedAsync(
+            new TicketQuery { SlaStatus = SlaStatus.WithinSla, Search = "Configurable threshold" },
+            CancellationToken.None);
+        var fiftyPercentThreshold = await fiftyPercentQueries.GetPagedAsync(
+            new TicketQuery { SlaStatus = SlaStatus.AtRisk, Search = "Configurable threshold" },
+            CancellationToken.None);
+
+        Assert.Single(defaultThreshold.Items);
+        Assert.Single(fiftyPercentThreshold.Items);
+    }
+
+    public static TheoryData<SlaStatus, int> SlaFilterCases() => new()
+    {
+        { SlaStatus.WithinSla, 1 },
+        { SlaStatus.AtRisk, 3 },
+        { SlaStatus.Breached, 3 },
+        { SlaStatus.Met, 2 },
+        { SlaStatus.NotApplicable, 7 }
+    };
+
     public void Dispose()
     {
         _db.Dispose();
         _connection.Dispose();
+    }
+
+    private static SlaSettings SlaSettings(double atRiskThresholdPercent = 25) => new()
+    {
+        BaseWindowHours = new Dictionary<TicketPriority, double>
+        {
+            [TicketPriority.Low] = 72,
+            [TicketPriority.Medium] = 24,
+            [TicketPriority.High] = 8,
+            [TicketPriority.Critical] = 4
+        },
+        PremiumCustomerMultiplier = 0.5,
+        MinimumWindowHours = 1,
+        AtRiskThresholdPercent = atRiskThresholdPercent
+    };
+
+    private async Task SeedSlaScenariosAsync()
+    {
+        var now = FixedClock.DefaultNow;
+        AddSlaTicket("SLA-WITHIN", "Comfortably within", TicketPriority.High,
+            now.AddHours(-4), now.AddHours(4));
+        AddSlaTicket("SLA-AT-RISK", "Combined at-risk ticket", TicketPriority.High,
+            now.AddHours(-6), now.AddHours(2));
+        AddSlaTicket("SLA-AT-DEADLINE", "Exactly at deadline", TicketPriority.Medium,
+            now.AddHours(-8), now);
+        AddSlaTicket("SLA-OPEN-LATE", "Open after deadline", TicketPriority.Low,
+            now.AddHours(-8), now.AddTicks(-1));
+        AddSlaTicket("SLA-RESOLVED-BEFORE", "Resolved before deadline", TicketPriority.High,
+            now.AddHours(-8), now, TicketStatus.Resolved, now.AddTicks(-1));
+        AddSlaTicket("SLA-RESOLVED-AT", "Resolved at deadline", TicketPriority.High,
+            now.AddHours(-8), now, TicketStatus.Resolved, now);
+        AddSlaTicket("SLA-RESOLVED-LATE", "Resolved after deadline", TicketPriority.High,
+            now.AddHours(-8), now, TicketStatus.Resolved, now.AddTicks(1));
+        AddSlaTicket("SLA-CLOSED-LATE", "Closed after deadline", TicketPriority.Medium,
+            now.AddHours(-8), now, TicketStatus.Closed, now.AddTicks(1));
+        AddSlaTicket("SLA-NONE", "No SLA deadline", TicketPriority.Low, now, null);
+        await _db.SaveChangesAsync();
+
+        var escalated = AddSlaTicket(
+            "SLA-ESCALATED", "Escalated window", TicketPriority.Medium,
+            now.AddDays(-1), now.AddHours(-1));
+        await _db.SaveChangesAsync();
+        var escalationAtUtc = now.AddHours(-6);
+        var decision = new TicketEscalationService(new SlaDeadlineCalculator(SlaSettings())).Escalate(
+            escalated,
+            await _db.Set<Category>().SingleAsync(category => category.Id == _technicalCategoryId),
+            CustomerTier.Standard,
+            [],
+            "Customer impact increased",
+            "shift-lead",
+            escalationAtUtc);
+        _db.Add(new TicketEscalation(
+            escalated.Id,
+            decision.FromPriority,
+            decision.ToPriority,
+            decision.FromAgentId,
+            decision.ToAgentId,
+            decision.FromDueAtUtc,
+            decision.ToDueAtUtc,
+            decision.Reason,
+            decision.EscalatedBy,
+            decision.EscalatedAtUtc));
+        await _db.SaveChangesAsync();
+    }
+
+    private Ticket AddSlaTicket(
+        string reference,
+        string title,
+        TicketPriority priority,
+        DateTime startedAtUtc,
+        DateTime? dueAtUtc,
+        TicketStatus status = TicketStatus.New,
+        DateTime? resolvedAtUtc = null)
+    {
+        var ticket = Ticket.Raise(
+            reference,
+            title,
+            "A description long enough for an SLA filtering scenario.",
+            _northwindCustomerId,
+            _technicalCategoryId,
+            priority,
+            startedAtUtc,
+            dueAtUtc);
+        if (status != TicketStatus.New)
+        {
+            ticket.ChangeStatus(status, resolvedAtUtc!.Value);
+        }
+
+        _db.Add(ticket);
+        return ticket;
     }
 
     private void Seed()

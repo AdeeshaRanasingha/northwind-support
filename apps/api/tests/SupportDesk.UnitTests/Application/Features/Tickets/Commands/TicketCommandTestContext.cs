@@ -3,11 +3,14 @@ using SupportDesk.Application.Abstractions;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Features.Tickets.Commands.AssignTicket;
 using SupportDesk.Application.Features.Tickets.Commands.ChangeTicketStatus;
+using SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
 using SupportDesk.Application.Features.Tickets.Commands.RaiseTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
 using SupportDesk.Domain.Aggregates.Agents;
+using SupportDesk.Domain.Aggregates.Categories;
 using SupportDesk.Domain.Aggregates.Customers;
 using SupportDesk.Domain.Aggregates.Tickets;
+using SupportDesk.Domain.Common;
 using SupportDesk.Domain.Repositories;
 using SupportDesk.UnitTests.TestDoubles;
 
@@ -21,11 +24,24 @@ internal sealed class TicketCommandTestContext
 {
     public TicketCommandTestContext()
     {
-        Customers.Setup(c => c.ExistsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        Customer = WithId(
+            new Customer(
+                "Contoso Ltd",
+                "support@contoso.example",
+                null,
+                CustomerTier.Standard,
+                Clock.UtcNow),
+            1);
+        Category = WithId(
+            new Category("General", requiresSpecialist: false, forcesCriticalPriority: false),
+            3);
 
-        Categories.Setup(c => c.ExistsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        Customers.Setup(c => c.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => Customer);
+        Categories.Setup(c => c.GetByIdAsync(3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => Category);
+        Agents.Setup(a => a.GetAssignmentCandidatesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => AssignmentCandidates);
 
         Tickets.Setup(t => t.NextReferenceAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync("TCK-0041");
@@ -33,21 +49,20 @@ internal sealed class TicketCommandTestContext
         Tickets.Setup(t => t.AddAsync(It.IsAny<Ticket>(), It.IsAny<CancellationToken>()))
             .Callback<Ticket, CancellationToken>((ticket, _) => AddedTicket = ticket)
             .Returns(Task.CompletedTask);
+        Escalations.Setup(repository => repository.AddAsync(
+                It.IsAny<TicketEscalation>(), It.IsAny<CancellationToken>()))
+            .Callback<TicketEscalation, CancellationToken>((escalation, _) => AddedEscalation = escalation)
+            .Returns(Task.CompletedTask);
 
         // Every command returns the ticket as re-read once its change has been saved.
         TicketQueries.Setup(q => q.GetDetailAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TicketDetailDto
-            {
-                Id = 41,
-                Reference = "TCK-0041",
-                Customer = new CustomerContactDto(1, "Contoso Ltd", "support@contoso.example", null, CustomerTier.Premium),
-                Category = new CategoryDto(1, "General", false)
-            });
+            .ReturnsAsync(() => CreatedDetail());
 
         var getTicket = new GetTicketQueryHandler(TicketQueries.Object);
 
         RaiseTicket = new RaiseTicketCommandHandler(
-            Tickets.Object, Customers.Object, Categories.Object, UnitOfWork.Object, Clock, getTicket,
+            Tickets.Object, Customers.Object, Categories.Object, Agents.Object,
+            new SlaDeadlineCalculator(SlaSettings()), UnitOfWork.Object, Clock, getTicket,
             NullLogger<RaiseTicketCommandHandler>.Instance);
 
         ChangeTicketStatus = new ChangeTicketStatusCommandHandler(Tickets.Object, UnitOfWork.Object, Clock, getTicket);
@@ -55,6 +70,11 @@ internal sealed class TicketCommandTestContext
         AssignTicket = new AssignTicketCommandHandler(
             Tickets.Object, Agents.Object, UnitOfWork.Object, Clock, getTicket,
             NullLogger<AssignTicketCommandHandler>.Instance);
+
+        EscalateTicket = new EscalateTicketCommandHandler(
+            Tickets.Object, Customers.Object, Categories.Object, Agents.Object, Escalations.Object,
+            new TicketEscalationService(new SlaDeadlineCalculator(SlaSettings())),
+            UnitOfWork.Object, Clock);
     }
 
     public Mock<ITicketRepository> Tickets { get; } = new();
@@ -67,9 +87,17 @@ internal sealed class TicketCommandTestContext
 
     public Mock<IUnitOfWork> UnitOfWork { get; } = new();
 
+    public Mock<ITicketEscalationRepository> Escalations { get; } = new();
+
     public Mock<ITicketQueries> TicketQueries { get; } = new();
 
     public FixedClock Clock { get; } = new();
+
+    public Customer Customer { get; set; }
+
+    public Category Category { get; set; }
+
+    public IReadOnlyList<AgentAssignmentCandidate> AssignmentCandidates { get; set; } = [];
 
     public RaiseTicketCommandHandler RaiseTicket { get; }
 
@@ -77,8 +105,12 @@ internal sealed class TicketCommandTestContext
 
     public AssignTicketCommandHandler AssignTicket { get; }
 
+    public EscalateTicketCommandHandler EscalateTicket { get; }
+
     /// <summary>The ticket handed to the repository by the last create call.</summary>
     public Ticket? AddedTicket { get; private set; }
+
+    public TicketEscalation? AddedEscalation { get; private set; }
 
     /// <summary>Makes <see cref="ITicketRepository.GetByIdAsync"/> return this ticket.</summary>
     public Ticket ExistingTicket(Ticket ticket)
@@ -103,4 +135,64 @@ internal sealed class TicketCommandTestContext
 
     public void VerifySaved(Times times) =>
         UnitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), times);
+
+    public static T WithId<T>(T entity, int id) where T : Entity
+    {
+        typeof(Entity).GetProperty(nameof(Entity.Id))!.SetValue(entity, id);
+        return entity;
+    }
+
+    private TicketDetailDto CreatedDetail()
+    {
+        if (AddedTicket is null)
+        {
+            return new TicketDetailDto
+            {
+                Id = 41,
+                Reference = "TCK-0041",
+                Customer = new CustomerContactDto(1, "Contoso Ltd", "support@contoso.example", null, CustomerTier.Standard),
+                Category = new CategoryDto(3, "General", false)
+            };
+        }
+
+        var assignedAgent = AssignmentCandidates
+            .Select(candidate => candidate.Agent)
+            .FirstOrDefault(agent => agent.Id == AddedTicket.AssignedAgentId);
+
+        return new TicketDetailDto
+        {
+            Id = 41,
+            Reference = AddedTicket.Reference,
+            Title = AddedTicket.Title,
+            Description = AddedTicket.Description,
+            Status = AddedTicket.Status,
+            Priority = AddedTicket.Priority,
+            Customer = new CustomerContactDto(
+                Customer.Id, Customer.Name, Customer.Email, Customer.Phone, Customer.Tier),
+            Category = new CategoryDto(
+                Category.Id, Category.Name, Category.RequiresSpecialist),
+            AssignedAgent = assignedAgent is null
+                ? null
+                : new AgentSummaryDto(assignedAgent.Id, assignedAgent.FullName),
+            CreatedAtUtc = AddedTicket.CreatedAtUtc,
+            UpdatedAtUtc = AddedTicket.UpdatedAtUtc,
+            DueAtUtc = AddedTicket.DueAtUtc,
+            SlaStatus = new SlaEvaluator(SlaSettings()).Evaluate(
+                AddedTicket.CreatedAtUtc, AddedTicket.DueAtUtc, null, Clock.UtcNow)
+        };
+    }
+
+    private static SlaSettings SlaSettings() => new()
+    {
+        BaseWindowHours = new Dictionary<TicketPriority, double>
+        {
+            [TicketPriority.Low] = 72,
+            [TicketPriority.Medium] = 24,
+            [TicketPriority.High] = 8,
+            [TicketPriority.Critical] = 4
+        },
+        PremiumCustomerMultiplier = 0.5,
+        MinimumWindowHours = 1,
+        AtRiskThresholdPercent = 25
+    };
 }

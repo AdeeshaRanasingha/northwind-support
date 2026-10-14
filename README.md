@@ -51,14 +51,58 @@ The composed query remains unmaterialized until EF Core executes `CountAsync` an
 `Skip`/`Take` query, so filtering occurs in SQL and both `totalCount` and `totalPages` describe the
 filtered set. Relational SQLite tests, requests against the development SQL Server, and inspection
 of generated SQL verified that the same predicates run before counting and pagination. A future
-`slaStatus` filter can be added as another conditional predicate in `ApplyFilters` without changing
-the query structure.
+`slaStatus` uses the same structure with a database-translatable predicate. It derives the current
+SLA state at one captured request time, including the latest escalation as the current window start.
 
 Run the focused filtering tests with:
 
 ```bash
 dotnet test apps/api/tests/SupportDesk.UnitTests/SupportDesk.UnitTests.csproj --filter FullyQualifiedName~TicketQueriesTests
 ```
+
+### Automatic triage, SLA and escalation
+
+`POST /api/tickets` delegates its decisions to reusable domain components rather than duplicating
+rules in controllers. A missing requested priority defaults to Medium, while a category flagged
+`ForcesCriticalPriority` overrides the request. SLA windows are Low 72h, Medium 24h, High 8h and
+Critical 4h; Premium customers receive 50% with a one-hour minimum. These values and the 25%
+at-risk threshold live in the validated `Sla` configuration section.
+
+Assignment considers active agents below `MaxOpenTickets`, requires matching specialization only
+when the category requires it, and selects the lowest actual open workload with Agent ID as the
+deterministic tie-breaker. Resolved and Closed tickets do not count as open. If nobody qualifies,
+creation still succeeds unassigned with an explanation. This calculation currently uses a
+read-then-write workload snapshot: concurrent requests could choose the same agent, so production
+scale would require transactional locking, optimistic concurrency, or a queue.
+
+Escalation raises priority exactly one level, rejects Critical/Resolved/Closed tickets, recalculates
+the SLA from the escalation time, and retains the agent only while eligible. Each successful change
+atomically inserts an immutable `TicketEscalation` audit record. Migration
+`AddTicketEscalations` adds its table, `IX_TicketEscalations_TicketId`, priority constraints, and
+restricted-delete ticket/agent foreign keys so referenced audit history cannot be cascaded away.
+
+SLA status is derived rather than stored: No SLA, Within SLA, At risk, Breached or Met. Keeping
+priority, deadlines, assignment, escalation and SLA evaluation in small domain services makes the
+same rules reusable by creation and escalation and independently testable. Controller-specific
+logic, persisted SLA labels, client-side filtering, and per-agent workload queries were rejected
+because they duplicate rules, become stale, or introduce N+1 queries. SQL-side list predicates keep
+counts and pagination accurate; the React UI displays API results without recalculating them.
+
+Task 2 is covered by domain, handler, relational query, HTTP integration and React component/hook
+tests. The development SQL Server was also used to inspect generated filtering SQL and exercise
+creation, SLA filtering, escalation and history. Run the complete checks with:
+
+```bash
+dotnet test
+npm.cmd test --workspace apps/web
+npm.cmd run typecheck --workspace apps/web
+npm.cmd run lint --workspace apps/web
+npm.cmd run build
+```
+
+Known limitations: assignment is not serialized across concurrent writers; SLA filtering performs
+more derived SQL work than a persisted value and should be measured/indexed for large datasets;
+authentication will replace the request-supplied escalation actor in Task 3.
 
 ### Submission
 
@@ -117,9 +161,11 @@ Both pass on a clean checkout and neither needs a database.
 
 | Endpoint | Description |
 | --- | --- |
-| `GET /api/tickets` | Filtered and paged list with `search`, `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`, `unassignedOnly`, `sortBy`, and `sortDirection`. |
+| `GET /api/tickets` | Filtered and paged list, including `slaStatus` and the other ticket filters. |
 | `GET /api/tickets/{id}` | One ticket |
-| `POST /api/tickets` | Create a ticket |
+| `POST /api/tickets` | Create and automatically triage a ticket |
+| `POST /api/tickets/{id}/escalate` | Escalate one priority level and record audit history |
+| `GET /api/tickets/{id}/escalations` | Newest-first escalation history |
 | `PATCH /api/tickets/{id}/status` · `/assignment` | Change status / assignee |
 | `GET /api/customers` · `/api/agents` · `/api/categories` | Reference data |
 

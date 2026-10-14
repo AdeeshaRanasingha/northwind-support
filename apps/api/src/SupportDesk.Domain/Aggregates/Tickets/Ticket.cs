@@ -49,8 +49,8 @@ public sealed class Ticket : AggregateRoot
     public bool IsOpen => Status is not (TicketStatus.Resolved or TicketStatus.Closed);
 
     /// <summary>
-    /// Raises a new ticket for a customer. It starts as <see cref="TicketStatus.New"/>, with no
-    /// owner and no due date.
+    /// Raises a new ticket for a customer. It starts as <see cref="TicketStatus.New"/> with the
+    /// owner and deadline selected during triage, when supplied.
     /// </summary>
     public static Ticket Raise(
         string reference,
@@ -59,7 +59,9 @@ public sealed class Ticket : AggregateRoot
         int customerId,
         int categoryId,
         TicketPriority priority,
-        DateTime nowUtc)
+        DateTime nowUtc,
+        DateTime? dueAtUtc = null,
+        int? assignedAgentId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reference);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -72,10 +74,12 @@ public sealed class Ticket : AggregateRoot
             Description = description.Trim(),
             CustomerId = customerId,
             CategoryId = categoryId,
+            AssignedAgentId = assignedAgentId,
             Priority = priority,
             Status = TicketStatus.New,
             CreatedAtUtc = nowUtc,
-            UpdatedAtUtc = nowUtc
+            UpdatedAtUtc = nowUtc,
+            DueAtUtc = dueAtUtc
         };
     }
 
@@ -110,5 +114,16 @@ public sealed class Ticket : AggregateRoot
     {
         AssignedAgentId = agentId;
         UpdatedAtUtc = nowUtc;
+    }
+
+    /// <summary>Applies a fully validated escalation decision as one aggregate change.</summary>
+    internal void ApplyEscalation(TicketEscalationDecision decision)
+    {
+        ArgumentNullException.ThrowIfNull(decision);
+
+        Priority = decision.ToPriority;
+        AssignedAgentId = decision.ToAgentId;
+        DueAtUtc = decision.ToDueAtUtc;
+        UpdatedAtUtc = decision.EscalatedAtUtc;
     }
 }

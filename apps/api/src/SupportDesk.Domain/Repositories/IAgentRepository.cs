@@ -8,4 +8,7 @@ namespace SupportDesk.Domain.Repositories;
 public interface IAgentRepository
 {
     Task<Agent?> GetByIdAsync(int id, CancellationToken ct);
+
+    /// <summary>Loads every agent and their actual assigned-ticket workload for triage.</summary>
+    Task<IReadOnlyList<AgentAssignmentCandidate>> GetAssignmentCandidatesAsync(CancellationToken ct);
 }
