@@ -1,8 +1,11 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using SupportDesk.Application;
 using SupportDesk.Domain.Aggregates.Tickets;
 using SupportDesk.Infrastructure;
+using SupportDesk.Infrastructure.Authentication;
 using SupportDesk.Presentation.Extensions;
 using SupportDesk.Presentation.Filters;
 using SupportDesk.Presentation.Middleware;
@@ -29,6 +32,28 @@ builder.Services.AddCors(options => options.AddPolicy(
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+var jwtSettings = builder.Configuration
+    .GetSection(JwtSettings.SectionName)
+    .Get<JwtSettings>()
+    ?? throw new InvalidOperationException("The Jwt configuration section is required.");
+if (!jwtSettings.IsValid())
+{
+    throw new InvalidOperationException(
+        "Jwt issuer, audience, expiration and a signing key of at least 32 characters are required.");
+}
+
+builder.Services.AddSingleton(jwtSettings);
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+        options.TokenValidationParameters = AgentAuthenticationService.CreateValidationParameters(jwtSettings));
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
+
 builder.Services
     .AddOptions<SlaSettings>()
     .Bind(builder.Configuration.GetSection(SlaSettings.SectionName))
@@ -48,17 +73,24 @@ var app = builder.Build();
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+}
 
+if (app.Environment.IsDevelopment())
+{
     // Keeps a developer machine one command away from a working database.
     await app.MigrateAndSeedAsync();
 }
 
 app.UseCors(FrontendCorsPolicy);
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 
 app.Run();
+
+public partial class Program;

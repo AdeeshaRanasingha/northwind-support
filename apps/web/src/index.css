@@ -18,6 +18,12 @@
   --gap: 16px;
 }
 
+.login-panel {
+  width: 100%;
+  max-width: 440px;
+  margin: 24px auto;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -46,12 +52,21 @@ a {
 }
 
 .app__header {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 32px;
   padding: 12px 24px;
   background: var(--colour-surface);
   border-bottom: 1px solid var(--colour-border);
+}
+
+.app__session {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
 }
 
 .app__brand {

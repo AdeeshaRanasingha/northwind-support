@@ -8,6 +8,7 @@ using SupportDesk.Application.Features.Tickets.Commands.RaiseTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicketEscalations;
 using SupportDesk.Application.Features.Tickets.Queries.SearchTickets;
+using SupportDesk.Domain.Aggregates.Tickets;
 
 namespace SupportDesk.Presentation.Controllers;
 
@@ -71,8 +72,19 @@ public sealed class TicketsController : ControllerBase
         [FromServices] EscalateTicketCommandHandler handler,
         CancellationToken ct)
     {
+        var escalatedBy = User.Identity?.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(escalatedBy))
+        {
+            return Unauthorized();
+        }
+
+        if (escalatedBy.Length > TicketEscalation.MaxEscalatedByLength)
+        {
+            escalatedBy = escalatedBy[..TicketEscalation.MaxEscalatedByLength];
+        }
+
         var result = await handler.HandleAsync(
-            new EscalateTicketCommand(id, request.Reason, request.EscalatedBy),
+            new EscalateTicketCommand(id, request.Reason, escalatedBy),
             ct);
 
         return Ok(result);

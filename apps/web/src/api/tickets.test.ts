@@ -43,7 +43,6 @@ describe('ticketsApi SLA status filtering', () => {
 
     await ticketsApi.escalateTicket(12, {
       reason: 'Customer impact increased',
-      escalatedBy: 'Support Lead',
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -52,7 +51,6 @@ describe('ticketsApi SLA status filtering', () => {
         method: 'POST',
         body: JSON.stringify({
           reason: 'Customer impact increased',
-          escalatedBy: 'Support Lead',
         }),
       }),
     );
