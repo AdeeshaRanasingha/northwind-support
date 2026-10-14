@@ -16,12 +16,5 @@ public sealed class EscalateTicketRequestValidator : AbstractValidator<EscalateT
             .WithMessage(
                 $"Reason must contain {TicketEscalationService.MinReasonLength} to "
                 + $"{TicketEscalation.MaxReasonLength} characters.");
-
-        RuleFor(request => request.EscalatedBy)
-            .NotEmpty()
-            .Must(actor => actor is not null
-                && actor.Trim().Length <= TicketEscalation.MaxEscalatedByLength)
-            .WithMessage(
-                $"Escalated by must not exceed {TicketEscalation.MaxEscalatedByLength} characters.");
     }
 }

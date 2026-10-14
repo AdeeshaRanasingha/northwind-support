@@ -101,8 +101,8 @@ npm.cmd run build
 ```
 
 Known limitations: assignment is not serialized across concurrent writers; SLA filtering performs
-more derived SQL work than a persisted value and should be measured/indexed for large datasets;
-authentication will replace the request-supplied escalation actor in Task 3.
+more derived SQL work than a persisted value and should be measured/indexed for large datasets.
+Escalation actors now come exclusively from validated JWT identity.
 
 ### Submission
 
@@ -135,6 +135,38 @@ npm run web                   # terminal 2: React dev server
 
 In Development the API applies migrations and seeds demo data on startup. **Never commit real
 credentials.**
+
+### Development agent credentials
+
+Development startup gives every seeded agent a salted ASP.NET Core Identity password hash. Use a
+seeded active agent email (for example `alex.turner@northwind-support.example`) with the local-only
+password `NorthwindDemo1!`. Existing development agents are backfilled only when their hash is
+missing, so seeding is idempotent; inactive agents receive a fixture hash but cannot authenticate.
+The hash is stored on `Agent`, keeping one identity per support agent. A separate Users table was
+rejected because the assignment has no non-agent accounts and it would add a redundant one-to-one
+identity lifecycle. Production credentials must be provisioned separately.
+
+JWT access tokens last 60 minutes and validate issuer, audience, signature and lifetime with no
+clock-skew allowance. Before starting the API, set `Jwt__SigningKey` to a unique value of at least
+32 characters (see `.env.example`); never commit a real signing key. `POST /api/auth/login` accepts
+the development credentials above, and `GET /api/auth/me` returns the agent identified by the
+validated token. API endpoints require JWT authorization by default; login and Swagger remain public.
+
+The frontend stores only the access token and its expiration in `sessionStorage`: refreshes in
+the same tab restore a valid session, while expired or malformed sessions are discarded; tab
+closure normally ends storage. React subscribes to session changes, and the shared API client
+attaches valid tokens to requests, excluding login. The server remains authoritative for JWT
+validation. Unlike HttpOnly cookies, this storage is readable by JavaScript and vulnerable to
+token theft through XSS. Production should use an appropriate HttpOnly/Secure/SameSite cookie
+or server-managed session design with CSRF protection, alongside XSS prevention and HTTPS.
+
+Visit `/login` with the development credentials above. Protected routes redirect to login and
+return to the requested path, query and hash after success; unsafe return destinations default
+to `/tickets`. The header loads the agent via `/auth/me`. Logout clears the session; expiry and
+matching authenticated API 401s return to login without letting late responses invalidate a newer
+session. Tokens expire after 60 minutes; there are no refresh tokens or server-side logout
+revocation, so a copied token remains valid until expiry. Run authentication tests with
+`npm.cmd test --workspace apps/web -- src/features/auth src/api/session.test.tsx src/api/client.test.ts`.
 
 **Visual Studio 2026:** run `npm run db:up`, open `SupportDesk.sln`, set
 **SupportDesk.Presentation** as the startup project, and press F5 on the **https** profile.

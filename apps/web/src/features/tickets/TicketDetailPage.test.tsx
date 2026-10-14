@@ -104,7 +104,6 @@ function renderPage() {
 
 async function submitEscalation(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole('textbox', { name: 'Reason' }), 'Customer impact increased');
-  await user.type(screen.getByRole('textbox', { name: 'Escalated by' }), 'Support Lead');
   await user.click(screen.getByRole('button', { name: 'Escalate ticket' }));
 }
 

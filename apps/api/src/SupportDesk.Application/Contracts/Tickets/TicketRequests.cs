@@ -17,4 +17,4 @@ public sealed record UpdateTicketStatusRequest(TicketStatus Status);
 public sealed record AssignTicketRequest(int? AgentId);
 
 /// <summary>Body of POST /api/tickets/{id}/escalate.</summary>
-public sealed record EscalateTicketRequest(string Reason, string EscalatedBy);
+public sealed record EscalateTicketRequest(string Reason);

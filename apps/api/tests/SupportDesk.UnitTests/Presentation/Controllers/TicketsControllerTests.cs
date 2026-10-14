@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Exceptions;
@@ -27,7 +29,7 @@ public sealed class TicketsControllerTests
             1);
         inactive.Deactivate();
         context.AssignmentCandidates = [new AgentAssignmentCandidate(inactive, [])];
-        var controller = new TicketsController();
+        var controller = AuthenticatedController();
         var request = new CreateTicketRequest(
             "Cannot log in",
             "Happens for every user since this morning.",
@@ -50,11 +52,11 @@ public sealed class TicketsControllerTests
     {
         var context = new TicketCommandTestContext();
         var ticket = ExistingTicket(context, TicketPriority.Low);
-        var controller = new TicketsController();
+        var controller = AuthenticatedController();
 
         var result = await controller.Escalate(
             ticket.Id,
-            new EscalateTicketRequest("Customer impact increased", "shift-lead"),
+            new EscalateTicketRequest("Customer impact increased"),
             context.EscalateTicket,
             CancellationToken.None);
 
@@ -66,7 +68,7 @@ public sealed class TicketsControllerTests
         Assert.Equal(TicketPriority.Low, response.Escalation.FromPriority);
         Assert.Equal(TicketPriority.Medium, response.Escalation.ToPriority);
         Assert.Equal("Customer impact increased", response.Escalation.Reason);
-        Assert.Equal("shift-lead", response.Escalation.EscalatedBy);
+        Assert.Equal("Alex Turner", response.Escalation.EscalatedBy);
         Assert.Equal(context.Clock.UtcNow, response.Escalation.EscalatedAtUtc);
         Assert.Equal(response.DueAtUtc, response.Escalation.ToDueAtUtc);
         context.VerifySaved(Times.Once());
@@ -79,9 +81,9 @@ public sealed class TicketsControllerTests
         context.Tickets.Setup(repository => repository.GetByIdAsync(404, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Ticket?)null);
 
-        var exception = await Assert.ThrowsAsync<NotFoundException>(() => new TicketsController().Escalate(
+        var exception = await Assert.ThrowsAsync<NotFoundException>(() => AuthenticatedController().Escalate(
             404,
-            new EscalateTicketRequest("Customer impact increased", "shift-lead"),
+            new EscalateTicketRequest("Customer impact increased"),
             context.EscalateTicket,
             CancellationToken.None));
 
@@ -96,9 +98,9 @@ public sealed class TicketsControllerTests
         var ticket = ExistingTicket(context, TicketPriority.Critical);
 
         var exception = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            new TicketsController().Escalate(
+            AuthenticatedController().Escalate(
                 ticket.Id,
-                new EscalateTicketRequest("Customer impact increased", "shift-lead"),
+                new EscalateTicketRequest("Customer impact increased"),
                 context.EscalateTicket,
                 CancellationToken.None));
 
@@ -117,9 +119,9 @@ public sealed class TicketsControllerTests
         ticket.ChangeStatus(status, context.Clock.UtcNow);
 
         var exception = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            new TicketsController().Escalate(
+            AuthenticatedController().Escalate(
                 ticket.Id,
-                new EscalateTicketRequest("Customer impact increased", "shift-lead"),
+                new EscalateTicketRequest("Customer impact increased"),
                 context.EscalateTicket,
                 CancellationToken.None));
 
@@ -172,6 +174,24 @@ public sealed class TicketsControllerTests
             context.Clock.UtcNow.AddHours(72));
         TicketCommandTestContext.WithId(ticket, 42);
         return context.ExistingTicket(ticket);
+    }
+
+    private static TicketsController AuthenticatedController()
+    {
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "Alex Turner")],
+            authenticationType: "Test");
+
+        return new TicketsController
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(identity),
+                },
+            },
+        };
     }
 
     private static void VerifyNoEscalationPersisted(TicketCommandTestContext context)
