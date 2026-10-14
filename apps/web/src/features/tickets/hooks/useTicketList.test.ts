@@ -16,6 +16,7 @@ const getTickets = vi.mocked(ticketsApi.getTickets);
 const immediateFilterChanges: Array<[string, Partial<TicketFilters>]> = [
   ['status', { status: 'InProgress' }],
   ['priority', { priority: 'High' }],
+  ['SLA status', { slaStatus: 'AtRisk' }],
   ['category', { categoryId: 3 }],
   ['customer', { customerId: 2 }],
   ['assigned agent', { assignedAgentId: 4 }],
@@ -120,14 +121,52 @@ describe('useTicketList', () => {
     await act(async () => {
       result.current.updateFilters({ categoryId: 3 });
     });
+    await act(async () => {
+      result.current.updateFilters({ slaStatus: 'Breached' });
+    });
 
     expect(getTickets).toHaveBeenLastCalledWith(
       expect.objectContaining({
         status: 'InProgress',
         priority: 'High',
         categoryId: 3,
+        slaStatus: 'Breached',
         page: 1,
       }),
+    );
+  });
+
+  it('clears the SLA status and resets pagination without affecting search debouncing', async () => {
+    const { result } = renderHook(() => useTicketList());
+
+    await act(async () => undefined);
+    await act(async () => {
+      result.current.updateFilters({ page: 3 });
+      result.current.updateFilters({ slaStatus: 'AtRisk' });
+    });
+
+    expect(getTickets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ slaStatus: 'AtRisk', page: 1 }),
+    );
+
+    act(() => {
+      result.current.updateFilters({ search: 'invoice' });
+    });
+
+    await act(async () => {
+      result.current.updateFilters({ slaStatus: undefined });
+    });
+
+    expect(getTickets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ slaStatus: undefined, search: '', page: 1 }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(getTickets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ slaStatus: undefined, search: 'invoice', page: 1 }),
     );
   });
 
