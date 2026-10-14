@@ -1,12 +1,11 @@
-# SQL Server for local development only. The password below is a throwaway local
-# placeholder - never commit a real credential.
+# Development stack; supply secrets through .env or environment injection.
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: supportdesk-sql
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Local_Dev_Password1}"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Supply the existing SQL Server password}
       MSSQL_PID: Developer
     ports:
       - "1433:1433"
@@ -14,14 +13,35 @@ services:
       - supportdesk-sql:/var/opt/mssql
     healthcheck:
       test:
-        [
-          "CMD-SHELL",
-          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1",
-        ]
+        - CMD-SHELL
+        - SQLCMDPASSWORD="$$MSSQL_SA_PASSWORD" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -l 3 -Q 'SELECT 1' > /dev/null
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
+
+  api:
+    image: northwind-support-api:dev
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "127.0.0.1:5080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__Default: "Server=sqlserver,1433;Database=SupportDesk;User Id=sa;Password=${MSSQL_SA_PASSWORD:?Supply the existing SQL Server password};TrustServerCertificate=True;Encrypt=False"
+      Jwt__SigningKey: ${Jwt__SigningKey:?Supply a unique JWT signing key of at least 32 characters}
+      Sla__BaseWindowHours__Critical: "4"
+      Sla__BaseWindowHours__High: "8"
+      Sla__BaseWindowHours__Medium: "24"
+      Sla__BaseWindowHours__Low: "72"
+      Sla__PremiumCustomerMultiplier: "0.5"
+      Sla__MinimumWindowHours: "1"
+      Sla__AtRiskThresholdPercent: "25"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
 
 volumes:
   supportdesk-sql:
