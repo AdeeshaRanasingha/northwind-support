@@ -17,7 +17,7 @@ public sealed class EscalateTicketRequestValidatorTests
     public async Task Validate_WithMissingOrShortTrimmedReason_Fails(string? reason)
     {
         var result = await _validator.ValidateAsync(
-            new EscalateTicketRequest(reason!, "shift-lead"));
+            new EscalateTicketRequest(reason!));
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.PropertyName == nameof(EscalateTicketRequest.Reason));
@@ -27,31 +27,7 @@ public sealed class EscalateTicketRequestValidatorTests
     public async Task Validate_WithReasonLongerThanPersistenceLimit_Fails()
     {
         var result = await _validator.ValidateAsync(new EscalateTicketRequest(
-            new string('x', TicketEscalation.MaxReasonLength + 1),
-            "shift-lead"));
-
-        Assert.False(result.IsValid);
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
-    public async Task Validate_WithMissingActor_Fails(string? actor)
-    {
-        var result = await _validator.ValidateAsync(
-            new EscalateTicketRequest("Customer impact increased", actor!));
-
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, error => error.PropertyName == nameof(EscalateTicketRequest.EscalatedBy));
-    }
-
-    [Fact]
-    public async Task Validate_WithActorLongerThanPersistenceLimit_Fails()
-    {
-        var result = await _validator.ValidateAsync(new EscalateTicketRequest(
-            "Customer impact increased",
-            new string('x', TicketEscalation.MaxEscalatedByLength + 1)));
+            new string('x', TicketEscalation.MaxReasonLength + 1)));
 
         Assert.False(result.IsValid);
     }
@@ -60,8 +36,7 @@ public sealed class EscalateTicketRequestValidatorTests
     public async Task Validate_WithTrimmedBoundaryValues_Succeeds()
     {
         var result = await _validator.ValidateAsync(new EscalateTicketRequest(
-            $"  {new string('x', TicketEscalationService.MinReasonLength)}  ",
-            $"  {new string('x', TicketEscalation.MaxEscalatedByLength)}  "));
+            $"  {new string('x', TicketEscalationService.MinReasonLength)}  "));
 
         Assert.True(result.IsValid);
     }
