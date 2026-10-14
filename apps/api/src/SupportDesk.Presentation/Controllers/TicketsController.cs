@@ -3,6 +3,7 @@ using SupportDesk.Application.Contracts.Common;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Features.Tickets.Commands.AssignTicket;
 using SupportDesk.Application.Features.Tickets.Commands.ChangeTicketStatus;
+using SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
 using SupportDesk.Application.Features.Tickets.Commands.RaiseTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
 using SupportDesk.Application.Features.Tickets.Queries.SearchTickets;
@@ -56,4 +57,23 @@ public sealed class TicketsController : ControllerBase
         [FromServices] AssignTicketCommandHandler handler,
         CancellationToken ct) =>
         handler.HandleAsync(id, request, ct);
+
+    /// <summary>Raises a ticket's priority by one level and records the escalation.</summary>
+    [HttpPost("{id:int}/escalate")]
+    [ProducesResponseType<EscalateTicketResult>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<EscalateTicketResult>> Escalate(
+        int id,
+        EscalateTicketRequest request,
+        [FromServices] EscalateTicketCommandHandler handler,
+        CancellationToken ct)
+    {
+        var result = await handler.HandleAsync(
+            new EscalateTicketCommand(id, request.Reason, request.EscalatedBy),
+            ct);
+
+        return Ok(result);
+    }
 }

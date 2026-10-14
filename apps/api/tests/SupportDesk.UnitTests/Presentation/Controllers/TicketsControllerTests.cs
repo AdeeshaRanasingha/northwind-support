@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using SupportDesk.Application.Contracts.Tickets;
+using SupportDesk.Application.Exceptions;
+using SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
 using SupportDesk.Domain.Aggregates.Agents;
 using SupportDesk.Domain.Aggregates.Tickets;
+using SupportDesk.Domain.Exceptions;
 using SupportDesk.Presentation.Controllers;
 using SupportDesk.UnitTests.Application.Features.Tickets.Commands;
 using SupportDesk.UnitTests.TestDoubles;
@@ -39,5 +42,118 @@ public sealed class TicketsControllerTests
         Assert.Null(response.AssignedAgent);
         Assert.Contains("No active agent", response.Triage!.AssignmentReason);
         context.VerifySaved(Times.Once());
+    }
+
+    [Fact]
+    public async Task Escalate_OnSuccess_Returns200WithUpdatedTicketAndAuditRecord()
+    {
+        var context = new TicketCommandTestContext();
+        var ticket = ExistingTicket(context, TicketPriority.Low);
+        var controller = new TicketsController();
+
+        var result = await controller.Escalate(
+            ticket.Id,
+            new EscalateTicketRequest("Customer impact increased", "shift-lead"),
+            context.EscalateTicket,
+            CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(200, ok.StatusCode);
+        var response = Assert.IsType<EscalateTicketResult>(ok.Value);
+        Assert.Equal(ticket.Id, response.TicketId);
+        Assert.Equal(TicketPriority.Medium, response.Priority);
+        Assert.Equal(TicketPriority.Low, response.Escalation.FromPriority);
+        Assert.Equal(TicketPriority.Medium, response.Escalation.ToPriority);
+        Assert.Equal("Customer impact increased", response.Escalation.Reason);
+        Assert.Equal("shift-lead", response.Escalation.EscalatedBy);
+        Assert.Equal(context.Clock.UtcNow, response.Escalation.EscalatedAtUtc);
+        Assert.Equal(response.DueAtUtc, response.Escalation.ToDueAtUtc);
+        context.VerifySaved(Times.Once());
+    }
+
+    [Fact]
+    public async Task Escalate_WhenTicketIsUnknown_PropagatesNotFoundWithoutPersistence()
+    {
+        var context = new TicketCommandTestContext();
+        context.Tickets.Setup(repository => repository.GetByIdAsync(404, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Ticket?)null);
+
+        var exception = await Assert.ThrowsAsync<NotFoundException>(() => new TicketsController().Escalate(
+            404,
+            new EscalateTicketRequest("Customer impact increased", "shift-lead"),
+            context.EscalateTicket,
+            CancellationToken.None));
+
+        Assert.Contains("Ticket", exception.Message);
+        VerifyNoEscalationPersisted(context);
+    }
+
+    [Fact]
+    public async Task Escalate_WhenTicketIsCritical_PropagatesConflictReasonWithoutPersistence()
+    {
+        var context = new TicketCommandTestContext();
+        var ticket = ExistingTicket(context, TicketPriority.Critical);
+
+        var exception = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            new TicketsController().Escalate(
+                ticket.Id,
+                new EscalateTicketRequest("Customer impact increased", "shift-lead"),
+                context.EscalateTicket,
+                CancellationToken.None));
+
+        Assert.Contains("Critical", exception.Message);
+        VerifyNoEscalationPersisted(context);
+    }
+
+    [Theory]
+    [InlineData(TicketStatus.Resolved)]
+    [InlineData(TicketStatus.Closed)]
+    public async Task Escalate_WhenTicketIsCompleted_PropagatesRelevantConflictWithoutPersistence(
+        TicketStatus status)
+    {
+        var context = new TicketCommandTestContext();
+        var ticket = ExistingTicket(context, TicketPriority.Low);
+        ticket.ChangeStatus(status, context.Clock.UtcNow);
+
+        var exception = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            new TicketsController().Escalate(
+                ticket.Id,
+                new EscalateTicketRequest("Customer impact increased", "shift-lead"),
+                context.EscalateTicket,
+                CancellationToken.None));
+
+        Assert.Contains(status.ToString(), exception.Message);
+        VerifyNoEscalationPersisted(context);
+    }
+
+    [Fact]
+    public void Escalate_DeclaresExpectedPostRoute()
+    {
+        var action = typeof(TicketsController).GetMethod(nameof(TicketsController.Escalate));
+        var route = Assert.Single(action!.GetCustomAttributes(typeof(HttpPostAttribute), inherit: false));
+
+        Assert.Equal("{id:int}/escalate", Assert.IsType<HttpPostAttribute>(route).Template);
+    }
+
+    private static Ticket ExistingTicket(TicketCommandTestContext context, TicketPriority priority)
+    {
+        var ticket = Ticket.Raise(
+            "TCK-0042",
+            "Service unavailable",
+            "The service is unavailable for several users.",
+            context.Customer.Id,
+            context.Category.Id,
+            priority,
+            context.Clock.UtcNow,
+            context.Clock.UtcNow.AddHours(72));
+        TicketCommandTestContext.WithId(ticket, 42);
+        return context.ExistingTicket(ticket);
+    }
+
+    private static void VerifyNoEscalationPersisted(TicketCommandTestContext context)
+    {
+        context.Escalations.Verify(repository => repository.AddAsync(
+            It.IsAny<TicketEscalation>(), It.IsAny<CancellationToken>()), Times.Never);
+        context.VerifySaved(Times.Never());
     }
 }
