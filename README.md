@@ -101,8 +101,8 @@ npm.cmd run build
 ```
 
 Known limitations: assignment is not serialized across concurrent writers; SLA filtering performs
-more derived SQL work than a persisted value and should be measured/indexed for large datasets;
-authentication will replace the request-supplied escalation actor in Task 3.
+more derived SQL work than a persisted value and should be measured/indexed for large datasets.
+Escalation actors now come exclusively from validated JWT identity.
 
 ### Submission
 
@@ -159,6 +159,14 @@ attaches valid tokens to requests, excluding login. The server remains authorita
 validation. Unlike HttpOnly cookies, this storage is readable by JavaScript and vulnerable to
 token theft through XSS. Production should use an appropriate HttpOnly/Secure/SameSite cookie
 or server-managed session design with CSRF protection, alongside XSS prevention and HTTPS.
+
+Visit `/login` with the development credentials above. Protected routes redirect to login and
+return to the requested path, query and hash after success; unsafe return destinations default
+to `/tickets`. The header loads the agent via `/auth/me`. Logout clears the session; expiry and
+matching authenticated API 401s return to login without letting late responses invalidate a newer
+session. Tokens expire after 60 minutes; there are no refresh tokens or server-side logout
+revocation, so a copied token remains valid until expiry. Run authentication tests with
+`npm.cmd test --workspace apps/web -- src/features/auth src/api/session.test.tsx src/api/client.test.ts`.
 
 **Visual Studio 2026:** run `npm run db:up`, open `SupportDesk.sln`, set
 **SupportDesk.Presentation** as the startup project, and press F5 on the **https** profile.
