@@ -38,6 +38,8 @@ builder.Services
     .ValidateOnStart();
 builder.Services.AddSingleton(sp =>
     new SlaDeadlineCalculator(sp.GetRequiredService<IOptions<SlaSettings>>().Value));
+builder.Services.AddSingleton(sp =>
+    new SlaEvaluator(sp.GetRequiredService<IOptions<SlaSettings>>().Value));
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);

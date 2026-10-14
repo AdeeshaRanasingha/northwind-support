@@ -35,7 +35,7 @@ public sealed class TicketQueriesTests : IDisposable
         _db.Database.EnsureCreated();
         Seed();
 
-        _queries = new TicketQueries(_db, new FixedClock());
+        _queries = new TicketQueries(_db, new FixedClock(), new SlaEvaluator(SlaSettings()));
     }
 
     [Fact]
@@ -415,11 +415,69 @@ public sealed class TicketQueriesTests : IDisposable
         Assert.Equal(["TCK-0002", "TCK-0001"], result.Items.Select(ticket => ticket.Reference));
     }
 
+    [Fact]
+    public async Task GetDetailAsync_ForEscalatedTicket_UsesLatestEscalationAsSlaWindowStart()
+    {
+        var createdAtUtc = FixedClock.DefaultNow.AddDays(-1);
+        var ticket = Ticket.Raise(
+            "TCK-0099",
+            "Escalated SLA query",
+            "A description long enough for a support ticket.",
+            _northwindCustomerId,
+            _technicalCategoryId,
+            TicketPriority.Medium,
+            createdAtUtc,
+            createdAtUtc.AddHours(24));
+        _db.Add(ticket);
+        await _db.SaveChangesAsync();
+        var escalationTimeUtc = FixedClock.DefaultNow.AddHours(-6);
+        var decision = new TicketEscalationService(new SlaDeadlineCalculator(SlaSettings())).Escalate(
+            ticket,
+            await _db.Set<Category>().SingleAsync(category => category.Id == _technicalCategoryId),
+            CustomerTier.Standard,
+            [],
+            "Customer impact increased",
+            "shift-lead",
+            escalationTimeUtc);
+        _db.Add(new TicketEscalation(
+            ticket.Id,
+            decision.FromPriority,
+            decision.ToPriority,
+            decision.FromAgentId,
+            decision.ToAgentId,
+            decision.FromDueAtUtc,
+            decision.ToDueAtUtc,
+            decision.Reason,
+            decision.EscalatedBy,
+            decision.EscalatedAtUtc));
+        await _db.SaveChangesAsync();
+
+        var result = await _queries.GetDetailAsync(ticket.Id, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(FixedClock.DefaultNow.AddHours(2), result.DueAtUtc);
+        Assert.Equal(SlaStatus.AtRisk, result.SlaStatus);
+    }
+
     public void Dispose()
     {
         _db.Dispose();
         _connection.Dispose();
     }
+
+    private static SlaSettings SlaSettings() => new()
+    {
+        BaseWindowHours = new Dictionary<TicketPriority, double>
+        {
+            [TicketPriority.Low] = 72,
+            [TicketPriority.Medium] = 24,
+            [TicketPriority.High] = 8,
+            [TicketPriority.Critical] = 4
+        },
+        PremiumCustomerMultiplier = 0.5,
+        MinimumWindowHours = 1,
+        AtRiskThresholdPercent = 25
+    };
 
     private void Seed()
     {

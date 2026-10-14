@@ -177,7 +177,8 @@ internal sealed class TicketCommandTestContext
             CreatedAtUtc = AddedTicket.CreatedAtUtc,
             UpdatedAtUtc = AddedTicket.UpdatedAtUtc,
             DueAtUtc = AddedTicket.DueAtUtc,
-            SlaStatus = SlaEvaluator.Evaluate(AddedTicket.DueAtUtc, null, Clock.UtcNow)
+            SlaStatus = new SlaEvaluator(SlaSettings()).Evaluate(
+                AddedTicket.CreatedAtUtc, AddedTicket.DueAtUtc, null, Clock.UtcNow)
         };
     }
 

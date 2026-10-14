@@ -11,7 +11,7 @@ public sealed class SlaSettings
 
     public double MinimumWindowHours { get; set; }
 
-    /// <summary>Reserved for the later SLA-status calculation.</summary>
+    /// <summary>Percentage of the effective SLA window at or below which a ticket is at risk.</summary>
     public double AtRiskThresholdPercent { get; set; }
 
     public bool IsValid(out string? error)
