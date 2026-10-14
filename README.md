@@ -136,6 +136,16 @@ npm run web                   # terminal 2: React dev server
 In Development the API applies migrations and seeds demo data on startup. **Never commit real
 credentials.**
 
+### Development agent credentials
+
+Development startup gives every seeded agent a salted ASP.NET Core Identity password hash. Use a
+seeded active agent email (for example `alex.turner@northwind-support.example`) with the local-only
+password `NorthwindDemo1!`. Existing development agents are backfilled only when their hash is
+missing, so seeding is idempotent; inactive agents receive a fixture hash but cannot authenticate.
+The hash is stored on `Agent`, keeping one identity per support agent. A separate Users table was
+rejected because the assignment has no non-agent accounts and it would add a redundant one-to-one
+identity lifecycle. Production credentials must be provisioned separately.
+
 **Visual Studio 2026:** run `npm run db:up`, open `SupportDesk.sln`, set
 **SupportDesk.Presentation** as the startup project, and press F5 on the **https** profile.
 

@@ -7,6 +7,8 @@ namespace SupportDesk.Domain.Aggregates.Agents;
 /// </summary>
 public sealed class Agent : AggregateRoot
 {
+    public const int MaxPasswordHashLength = 512;
+
     private readonly List<AgentSpecialization> _specializations = [];
 
     private Agent()
@@ -30,6 +32,9 @@ public sealed class Agent : AggregateRoot
     public string FullName { get; private set; } = string.Empty;
 
     public string Email { get; private set; } = string.Empty;
+
+    /// <summary>A salted, one-way password hash. Null until credentials are provisioned.</summary>
+    public string? PasswordHash { get; private set; }
 
     /// <summary>Inactive agents keep their history but take no new work.</summary>
     public bool IsActive { get; private set; }
@@ -55,4 +60,18 @@ public sealed class Agent : AggregateRoot
 
     /// <summary>Stops the agent from taking new work. Their history is kept.</summary>
     public void Deactivate() => IsActive = false;
+
+    public void SetPasswordHash(string passwordHash)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash);
+
+        if (passwordHash.Length > MaxPasswordHashLength)
+        {
+            throw new ArgumentException(
+                $"Password hash cannot exceed {MaxPasswordHashLength} characters.",
+                nameof(passwordHash));
+        }
+
+        PasswordHash = passwordHash;
+    }
 }
