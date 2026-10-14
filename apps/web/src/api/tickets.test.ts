@@ -34,4 +34,27 @@ describe('ticketsApi SLA status filtering', () => {
     const clearedUrl = String(fetchMock.mock.calls[1][0]);
     expect(clearedUrl).not.toContain('slaStatus=');
   });
+
+  it('posts escalation data to the ticket escalation endpoint', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ ticketId: 12 }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await ticketsApi.escalateTicket(12, {
+      reason: 'Customer impact increased',
+      escalatedBy: 'Support Lead',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/tickets/12/escalate',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          reason: 'Customer impact increased',
+          escalatedBy: 'Support Lead',
+        }),
+      }),
+    );
+  });
 });

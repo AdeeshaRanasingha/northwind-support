@@ -3,15 +3,18 @@ import { ErrorMessage } from '../../components/ErrorMessage';
 import { Spinner } from '../../components/Spinner';
 import { useReferenceData } from '../../hooks/useReferenceData';
 import { AssignAgentControl } from './components/AssignAgentControl';
+import { EscalationPanel } from './components/EscalationPanel';
 import { StatusActions } from './components/StatusActions';
 import { TicketSummary } from './components/TicketSummary';
 import { useTicket } from './hooks/useTicket';
+import { useTicketEscalations } from './hooks/useTicketEscalations';
 
 export function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
   const ticketId = Number(id);
 
   const { data: ticket, isLoading, error, reload, setData } = useTicket(ticketId);
+  const escalationHistory = useTicketEscalations(ticketId);
   const reference = useReferenceData();
 
   if (Number.isNaN(ticketId)) {
@@ -51,6 +54,13 @@ export function TicketDetailPage() {
           </div>
 
           <StatusActions ticket={ticket} onUpdated={setData} />
+
+          <EscalationPanel
+            ticket={ticket}
+            onEscalated={async () => {
+              await Promise.all([reload(), escalationHistory.reload()]);
+            }}
+          />
         </div>
 
         <aside className="detail-layout__side">
