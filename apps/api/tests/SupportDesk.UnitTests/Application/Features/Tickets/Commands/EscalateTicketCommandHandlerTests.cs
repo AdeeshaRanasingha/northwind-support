@@ -48,6 +48,8 @@ public sealed class EscalateTicketCommandHandlerTests
         Assert.Equal("shift-lead", history.EscalatedBy);
         Assert.Equal(context.Clock.UtcNow, history.EscalatedAtUtc);
         Assert.Equal(history.ToPriority, result.Escalation.ToPriority);
+        context.Escalations.Verify(repository => repository.AddAsync(
+            It.IsAny<TicketEscalation>(), It.IsAny<CancellationToken>()), Times.Once);
         context.VerifySaved(Times.Once());
     }
 
